@@ -1,0 +1,136 @@
+<!doctype html>
+<!--
+  Native offline fallback for the Android app.
+
+  Shown by MainActivity's WebViewClient.onReceivedError only when the very first
+  load of https://tcoaal.app/ fails with no connection AND the service-worker
+  app shell has never been cached (a fresh install opened offline). After one
+  successful online launch the SW serves the loader offline, so this page is
+  never reached again. It is fully self-contained (no network assets) and styled
+  to match the loader.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>No connection</title>
+    <style>
+      :root {
+        --green: #86d37a;
+        --yellow: #eeea72;
+        --red: #955456;
+        --default: #d3d0c0;
+        --bg-color: #1a1a1a;
+        --bg-color-darker: #121212;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: calc(24px + env(safe-area-inset-top, 0px))
+          calc(20px + env(safe-area-inset-right, 0px))
+          calc(24px + env(safe-area-inset-bottom, 0px))
+          calc(20px + env(safe-area-inset-left, 0px));
+        color: var(--default);
+        font-family: "Georgia", serif;
+        background:
+          radial-gradient(
+            120% 90% at 50% 0%,
+            rgba(149, 84, 86, 0.22),
+            rgba(0, 0, 0, 0) 60%
+          ),
+          var(--bg-color-darker);
+      }
+      .card {
+        width: min(480px, 100%);
+        background: var(--bg-color);
+        border: 1px solid rgba(149, 84, 86, 0.6);
+        border-radius: 8px;
+        padding: 28px 26px 22px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .icon {
+        width: 54px;
+        height: 54px;
+        margin: 2px auto 0;
+        fill: var(--red);
+      }
+      h1 {
+        margin: 0;
+        color: var(--red);
+        font-size: 22px;
+        font-weight: normal;
+      }
+      p {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.6;
+        color: rgba(255, 255, 255, 0.85);
+      }
+      p.aside {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.55);
+      }
+      strong {
+        color: var(--yellow);
+        font-weight: normal;
+      }
+      button {
+        margin-top: 6px;
+        align-self: center;
+        min-width: 160px;
+        padding: 11px 26px;
+        border: none;
+        border-radius: 4px;
+        background: var(--green);
+        color: #101010;
+        font-family: "Georgia", serif;
+        font-size: 17px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: opacity 0.2s;
+      }
+      button:active {
+        opacity: 0.8;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
+        />
+      </svg>
+      <h1>No connection</h1>
+      <p>
+        You need to start the game <strong>once with an internet
+        connection</strong> before it can run offline.
+      </p>
+      <p class="aside">
+        After it loads the first time, it works without a connection.
+      </p>
+      <button type="button" onclick="retry()">Try again</button>
+    </div>
+    <script>
+      function retry() {
+        // shouldOverrideUrlLoading treats tcoaal.app as internal, so this loads
+        // in the WebView. If still offline it fails and this page returns.
+        window.location.assign("https://tcoaal.app/");
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,1130 @@
+<!doctype html>
+<!--
+  TCOAAL Browser Player
+  Copyright (C) 2026 kidev
+
+  This program is free software: you can redistribute it and/or modify it
+  under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or (at your
+  option) any later version. This program is distributed in the hope that it
+  will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+  of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+  General Public License for more details: <https://www.gnu.org/licenses/>.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Download a game version | TCOAAL Browser Player</title>
+    <meta
+      name="description"
+      content="Use your own Steam client to download an older build of The Coffin of Andy and Leyley, so you can play a mod that requires it. Nothing is hosted or uploaded here."
+    />
+    <meta name="author" content="kidev" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#ec83c3" />
+    <link rel="canonical" href="https://tcoaal.app/download.html" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <script>
+      (function () {
+        var l = document.createElement("link");
+        l.rel = "icon";
+        l.id = "favicon";
+        l.type = "image/x-icon";
+        l.href = "/favicon.ico?t=" + Date.now();
+        document.head.appendChild(l);
+      })();
+    </script>
+    <style>
+      /* The palette, background treatment, panel and button styles are the
+         loader's (app/loader.html), not the retired modding menu's: this page
+         is a sibling of loader.html and notice.html and must not read as a
+         different app. Only the wizard's own pieces (stepper, version list)
+         are new here. */
+      :root {
+        --green: #86d37a;
+        --purple: #ec83c3;
+        --default: #d3d0c0;
+        --red: #955456;
+        --white: #ffffff;
+        --black: #000000;
+        --bg-color-section: #2a2a2a;
+        --bg-color-section-lighter: #3a3a3a;
+        --txt-color: var(--white);
+        --accent-color: #555555;
+        --accent-color-light: #666666;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* Same treatment as loader.html and notice.html: the art is painted on
+         the root so it covers the viewport on the first frame, and the page
+         scrolls over a fixed copy of it with no scrollbar reflow. */
+      html {
+        scrollbar-width: none;
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg.webp") top center / cover no-repeat,
+          var(--black);
+      }
+      html.android-app {
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg-android.webp") top center / cover no-repeat,
+          var(--black);
+      }
+      html::-webkit-scrollbar,
+      body::-webkit-scrollbar {
+        display: none;
+      }
+
+      body {
+        background: transparent;
+        color: var(--default);
+        font-family: "Georgia", serif;
+        min-height: 100vh;
+        line-height: 1.6;
+      }
+
+      .bg {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        z-index: 0;
+        pointer-events: none;
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg.webp") top center / cover no-repeat,
+          var(--black);
+      }
+      body.android-app .bg {
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg-android.webp") top center / cover no-repeat,
+          var(--black);
+      }
+
+      .wrap {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        max-width: 720px;
+        margin: 0 auto;
+        padding: clamp(56px, 7vmin, 88px) clamp(16px, 3vmin, 32px)
+          clamp(40px, 6vmin, 72px);
+      }
+
+      .back-link {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        z-index: 10;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: rgba(15, 15, 15, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.9);
+        text-decoration: none;
+        font-size: 0.85em;
+        transition: all 0.3s ease;
+      }
+      .back-link:hover {
+        color: var(--white);
+        background: rgba(236, 131, 195, 0.35);
+        border-color: rgba(236, 131, 195, 0.6);
+        transform: translateY(-1px);
+      }
+      .back-link svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex: 0 0 auto;
+      }
+
+      /* Panel: loader.html's .panel, widened to hold the wizard. */
+      .panel {
+        width: 100%;
+        padding: clamp(16px, 2.2vmin, 26px) clamp(18px, 2.4vmin, 30px);
+        background: rgba(20, 20, 20, 0.88);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        box-shadow:
+          0 6px 24px rgba(0, 0, 0, 0.55),
+          inset 0 0 24px rgba(0, 0, 0, 0.35);
+      }
+      .panel-title {
+        color: var(--purple);
+        font-family: "Georgia", serif;
+        font-size: clamp(15px, 1.9vmin, 20px);
+        font-weight: normal;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin: 0;
+        text-align: center;
+      }
+      .lede {
+        font-size: clamp(13px, 1.35vmin, 16px);
+        line-height: 1.55;
+        color: rgba(255, 255, 255, 0.72);
+        margin: clamp(8px, 1.2vmin, 14px) 0 clamp(12px, 1.8vmin, 20px);
+        text-align: center;
+      }
+      .meta {
+        font-size: clamp(11px, 1.1vmin, 14px);
+        line-height: 1.55;
+        color: rgba(255, 255, 255, 0.5);
+        margin: 0;
+      }
+      code {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 0.9em;
+        color: rgba(255, 255, 255, 0.78);
+        background: rgba(0, 0, 0, 0.35);
+        padding: 2px 6px;
+        border-radius: 3px;
+        word-break: break-all;
+      }
+
+      /* Buttons: loader.html's .action-btn and its variants, unchanged. */
+      .action-btn {
+        background: var(--accent-color-light);
+        color: var(--txt-color);
+        border: none;
+        border-radius: 4px;
+        padding: clamp(10px, 1.4vmin, 18px) clamp(16px, 2.8vmin, 32px);
+        cursor: pointer;
+        font-size: clamp(15px, 2.3vmin, 24px);
+        font-family: "Georgia", serif;
+        font-weight: bold;
+        transition: all 0.2s;
+        white-space: nowrap;
+        position: relative;
+      }
+      .action-btn:hover:not(:disabled) {
+        background: var(--accent-color);
+      }
+      .action-btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+      .action-btn.secondary {
+        font-size: clamp(13px, 1.7vmin, 19px);
+        padding: clamp(7px, 1vmin, 13px) clamp(14px, 2.1vmin, 26px);
+        background: var(--bg-color-section);
+      }
+      .action-btn.secondary:hover:not(:disabled) {
+        background: var(--bg-color-section-lighter);
+      }
+      .action-btn.compact {
+        font-size: clamp(12px, 1vmin, 14px);
+        padding: clamp(4px, 0.5vw, 8px) clamp(8px, 1vw, 14px);
+        white-space: nowrap;
+        flex: 0 0 auto;
+      }
+      .action-btn.success {
+        background: var(--green);
+        color: var(--black);
+      }
+      .action-btn.success:hover:not(:disabled) {
+        background: #a4e09a;
+      }
+      /* An <a> styled as a button drops the default underline so it matches
+         the sibling <button>s (same rule loader.html carries). */
+      a.action-btn {
+        text-decoration: none;
+        display: inline-block;
+      }
+      /* The one thing to click on a step gets the accent treatment (the
+         loader's .action-btn.accent) plus an icon: a flat grey slab centred
+         on its own line under a line of instructions reads as a heading, not
+         as a control. */
+      .action-btn.accent {
+        background: rgba(236, 131, 195, 0.18);
+        border: 1px solid rgba(236, 131, 195, 0.5);
+        color: var(--white);
+      }
+      .action-btn.accent:hover:not(:disabled) {
+        background: rgba(236, 131, 195, 0.3);
+        border-color: rgba(236, 131, 195, 0.75);
+        transform: translateY(-1px);
+      }
+      .action-btn.icon-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .action-btn.icon-btn svg {
+        width: 1.05em;
+        height: 1.05em;
+        flex: 0 0 auto;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      /* ----- The wizard ------------------------------------------------- */
+
+      /* One line of steps over a fixed-height body, so switching step (or the
+         catalog finishing its load) never resizes the panel under the cursor.
+         Inactive steps collapse to their number; the active one grows and
+         shows its label. The title attribute keeps the full text reachable. */
+      .stepper {
+        display: flex;
+        gap: 6px;
+        margin-bottom: clamp(10px, 1.6vmin, 16px);
+        flex-wrap: nowrap;
+      }
+      .step {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-width: 0;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 6px;
+        padding: 8px 10px;
+        color: rgba(211, 208, 192, 0.7);
+        font-family: "Georgia", serif;
+        font-size: clamp(11px, 1.4vmin, 13px);
+        white-space: nowrap;
+        cursor: pointer;
+        overflow: hidden;
+        transition:
+          color 0.15s,
+          background-color 0.15s,
+          border-color 0.15s;
+      }
+      .step-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .step:not(.active) .step-label {
+        display: none;
+      }
+      .step .step-n {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.14);
+        color: var(--white);
+        font-size: 0.78rem;
+        font-weight: bold;
+      }
+      .step.active {
+        flex: 1 1 auto;
+        color: var(--white);
+        border-color: var(--purple);
+        background: rgba(236, 131, 195, 0.1);
+      }
+      .step.active .step-n {
+        background: var(--purple);
+        color: #1a0f16;
+      }
+      .step.done .step-n {
+        background: var(--green);
+        color: #10210d;
+      }
+      .step:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .step-body {
+        height: clamp(280px, 44vh, 420px);
+        display: flex;
+        flex-direction: column;
+      }
+      .step-panel {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0; /* let the catalog's own scroll area shrink */
+        overflow-y: auto;
+      }
+      .step-panel[hidden] {
+        display: none;
+      }
+      .step-panel > p {
+        margin: 0 0 8px;
+        font-size: clamp(13px, 1.35vmin, 16px);
+        color: rgba(255, 255, 255, 0.82);
+      }
+      .step-cta {
+        text-align: center;
+        margin: clamp(12px, 2vmin, 20px) 0;
+      }
+
+      .dl-picked {
+        margin: 0 0 10px;
+        font-size: clamp(12px, 1.25vmin, 15px);
+        color: var(--green);
+      }
+
+      /* Version list: fills the rest of the fixed body and scrolls. */
+      #dl-catalog {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+      details.vmajor {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        padding: 6px 10px;
+        margin-bottom: 8px;
+        background: rgba(0, 0, 0, 0.2);
+      }
+      details.vmajor > summary {
+        cursor: pointer;
+        font-weight: bold;
+        color: var(--white);
+        font-size: clamp(13px, 1.4vmin, 16px);
+        list-style: revert;
+      }
+      .vitem {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 4px;
+        border-top: 1px solid rgba(255, 255, 255, 0.07);
+        font-size: clamp(12px, 1.3vmin, 15px);
+        color: rgba(255, 255, 255, 0.85);
+      }
+      .vitem .vmeta {
+        opacity: 0.6;
+        font-size: 0.85em;
+      }
+      /* The row a ?version= deep link asked for: outline it so it is findable
+         in a list several screens long. */
+      .vitem.dl-focus {
+        background: rgba(236, 131, 195, 0.12);
+        border-radius: 4px;
+        box-shadow: inset 0 0 0 1px var(--purple);
+      }
+      .badge {
+        color: var(--green);
+        font-size: 0.8em;
+        margin-left: 6px;
+      }
+
+      .field {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 6px;
+      }
+      .field input {
+        flex: 1;
+        min-width: 0;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: clamp(11px, 1.15vmin, 14px);
+        color: var(--white);
+        background: #161616;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 5px;
+        padding: 8px 10px;
+      }
+      .field input:focus {
+        outline: none;
+        border-color: rgba(236, 131, 195, 0.6);
+      }
+      #dl-console {
+        width: 100%;
+        resize: none;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: clamp(11px, 1.15vmin, 14px);
+        color: var(--white);
+        background: #161616;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 5px;
+        padding: 8px 10px;
+      }
+      #dl-console:focus {
+        outline: none;
+        border-color: rgba(236, 131, 195, 0.6);
+      }
+
+      .status {
+        text-align: center;
+        color: var(--txt-color);
+        font-size: clamp(12px, 1.3vmin, 15px);
+        min-height: 1.2em;
+        margin-top: clamp(8px, 1.2vmin, 14px);
+        word-break: break-word;
+        line-height: 1.4;
+      }
+      .status.error {
+        color: var(--red);
+      }
+      .status.ok {
+        color: var(--green);
+      }
+
+      /* Desktop-only feature note, shown when the UA looks like a phone or a
+         tablet: Steam's console does not exist there, so the whole flow has to
+         happen on the machine the game is installed on. */
+      .note {
+        border: 1px solid rgba(238, 234, 114, 0.4);
+        background: rgba(238, 234, 114, 0.1);
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin: 0 0 10px;
+        font-size: clamp(11px, 1.15vmin, 14px);
+        line-height: 1.5;
+        color: rgba(255, 255, 255, 0.8);
+      }
+
+      @media (max-width: 720px) {
+        .wrap {
+          padding-top: 64px;
+        }
+        .step-body {
+          height: auto;
+          min-height: 280px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      // Match the loader's Android flagging so the page picks the same art.
+      (function () {
+        try {
+          if (/TCOAALApp\//.test(navigator.userAgent)) {
+            document.body.classList.add("android-app");
+            document.documentElement.classList.add("android-app");
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <div class="bg"></div>
+
+    <a class="back-link" href="loader.html" aria-label="Back to loader">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M19 12H5M12 19l-7-7 7-7" />
+      </svg>
+      <span>Back</span>
+    </a>
+
+    <main class="wrap">
+      <section class="panel">
+        <h1 class="panel-title">Download a game version</h1>
+        <p class="lede">
+          Use Steam to download an older build of the game, so you can play a
+          mod that needs it. Nothing is uploaded or hosted here: this page only
+          hands your own Steam client the right command.
+        </p>
+
+        <div class="stepper" id="dl-stepper">
+          <button class="step" data-step="1" title="Choose version" type="button">
+            <span class="step-n">1</span>
+            <span class="step-label">Choose version</span>
+          </button>
+          <button class="step" data-step="2" title="Open console" type="button">
+            <span class="step-n">2</span>
+            <span class="step-label">Open console</span>
+          </button>
+          <button class="step" data-step="3" title="Paste command" type="button">
+            <span class="step-n">3</span>
+            <span class="step-label">Paste command</span>
+          </button>
+          <button
+            class="step"
+            data-step="4"
+            title="Find and import the folder"
+            type="button"
+          >
+            <span class="step-n">4</span>
+            <span class="step-label">Find &amp; import</span>
+          </button>
+        </div>
+
+        <!-- Fixed-height body: the panels swap inside it without reflowing. -->
+        <div class="step-body">
+          <p class="dl-picked" id="dl-picked" hidden></p>
+
+          <!-- Step 1: pick a version (the catalog scrolls inside the body). -->
+          <div class="step-panel" data-panel="1">
+            <div class="note" id="dl-desktop-note" hidden>
+              Steam's console only exists in the desktop client. Do this on the
+              computer your game is installed on, then bring the folder here.
+            </div>
+            <div id="dl-catalog">
+              <p class="meta">Loading versions...</p>
+            </div>
+          </div>
+
+          <!-- Step 2: open Steam's console (clicking it advances to 3). -->
+          <div class="step-panel" data-panel="2" hidden>
+            <p>Steam has a console built in. This opens it:</p>
+            <div class="step-cta">
+              <a
+                class="action-btn accent icon-btn"
+                id="dl-open-console"
+                href="steam://open/console"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="2.5" y="4" width="19" height="16" rx="2" />
+                  <path d="M6.5 9.5 9.5 12 6.5 14.5" />
+                  <path d="M12.5 15.5H17.5" />
+                </svg>
+                <span>Open the Steam console</span>
+              </a>
+            </div>
+            <p class="meta">
+              Nothing happens? Paste <code>steam://open/console</code> into your
+              browser's address bar, or open it from Steam itself, then pick
+              step 3 above.
+            </p>
+          </div>
+
+          <!-- Step 3: copy the command (Copy advances to 4). -->
+          <div class="step-panel" data-panel="3" hidden>
+            <p>Copy this, paste it into the console and press Enter:</p>
+            <div class="field">
+              <input type="text" id="dl-cmd" readonly />
+              <button class="action-btn compact" id="dl-copy" type="button">
+                Copy
+              </button>
+            </div>
+            <p class="meta" style="margin-top: 10px">
+              You have to be signed in to the Steam account that owns the game.
+              Steam shows no progress bar for this, so give it a minute to
+              finish.
+            </p>
+          </div>
+
+          <!-- Step 4: locate the downloaded folder and go import it. The
+               best-guess path is only a guess (Steam often adds a platform
+               subdirectory we cannot know), so pasting the console output
+               pins down the real destination. -->
+          <div class="step-panel" data-panel="4" hidden>
+            <p>Where did Steam put it? Paste the console output to be sure:</p>
+            <textarea
+              id="dl-console"
+              rows="3"
+              spellcheck="false"
+              placeholder='] download_depot 2378900 2378901 ...
+Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
+            ></textarea>
+            <div class="field" style="margin-top: 10px">
+              <input type="text" id="dl-path" readonly />
+              <button
+                class="action-btn compact secondary"
+                id="dl-path-copy"
+                type="button"
+              >
+                Copy
+              </button>
+            </div>
+            <p class="meta" id="dl-path-src"></p>
+            <div class="step-cta">
+              <a class="action-btn success" id="dl-import" href="loader.html">
+                Import it in the loader
+              </a>
+            </div>
+            <p class="meta">
+              On the loader, use <b>Import Folder</b> (or drop the folder on the
+              page) and pick the folder above. Its <code>www</code> subfolder
+              works too.
+            </p>
+          </div>
+
+          <div class="status" id="dl-status" hidden></div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      /* The Steam download wizard, self-contained. It lists the maintained
+         version catalog and hands the user the exact
+         `download_depot <appid> <depot> <manifest>` line; their own Steam
+         client does the download. The catalog is the same file every other
+         client of this project reads (one commit benefits all of them), and it
+         is not part of the deployed site, so it is fetched from the repo. */
+      (function () {
+        "use strict";
+
+        var CATALOG_URL =
+          "https://raw.githubusercontent.com/Kidev-org/TCOAALBrowserLoader/" +
+          "main/tools/tcoaal-versions.json";
+        // Offline/format fallbacks (the catalog ships these two as well).
+        var DEFAULT_APPID = "2378900";
+        var DEFAULT_DEPOT = "2378901";
+
+        // Read-only peek at the loader's IndexedDB, purely to mark the builds
+        // this browser already holds.
+        var DB_NAME = "tcoaal";
+        var DB_VERSION = 1;
+        var STORE_NAME = "assets";
+        var GAMEVER_REGISTRY_KEY = "__game_versions__";
+
+        var _cat = null; // parsed catalog, or null when unreachable
+        var _step = 1; // current wizard step (1-4)
+        var _sel = null; // chosen catalog entry (gates steps 2-4)
+        var _imported = []; // version strings already imported here
+        var _focus = null; // ?version= deep link to spotlight
+
+        function $(id) {
+          return document.getElementById(id);
+        }
+
+        function escapeHtml(s) {
+          return String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+        }
+
+        function setStatus(text, cls) {
+          var el = $("dl-status");
+          el.textContent = text || "";
+          el.className = "status" + (cls ? " " + cls : "");
+          el.hidden = !text;
+        }
+
+        function isMobileUA() {
+          var ua =
+            (navigator.userAgent || "") + " " + (navigator.platform || "");
+          return /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+        }
+
+        // imported versions
+        // js/main.js carries `const GAME_VERSION = "x.y.z"` in every build and
+        // engine JS is never encrypted or hash-renamed, so it is the one file
+        // worth reading here. Versions parked by the loader's version switcher
+        // are listed in its registry instead.
+        function openDb() {
+          return new Promise(function (resolve, reject) {
+            var req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onupgradeneeded = function (e) {
+              e.target.result.createObjectStore(STORE_NAME);
+            };
+            req.onsuccess = function (e) {
+              var db = e.target.result;
+              // Never block another context's deleteDatabase (the loader's
+              // wipe flow) with this short-lived handle.
+              db.onversionchange = function () {
+                db.close();
+              };
+              resolve(db);
+            };
+            req.onerror = function (e) {
+              reject(e.target.error);
+            };
+          });
+        }
+
+        function idbGet(db, key) {
+          return new Promise(function (resolve) {
+            var r;
+            try {
+              r = db.transaction(STORE_NAME).objectStore(STORE_NAME).get(key);
+            } catch (e) {
+              resolve(undefined);
+              return;
+            }
+            r.onsuccess = function () {
+              resolve(r.result);
+            };
+            r.onerror = function () {
+              resolve(undefined);
+            };
+          });
+        }
+
+        function mainJsVersion(raw) {
+          if (raw == null) return null;
+          try {
+            var bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
+            var text = new TextDecoder().decode(bytes);
+            var m = text.match(/GAME_VERSION\s*=\s*["']([^"']+)["']/);
+            return (m && m[1].trim()) || null;
+          } catch (e) {
+            return null;
+          }
+        }
+
+        async function loadImportedVersions() {
+          var out = [];
+          var db = null;
+          try {
+            db = await openDb();
+          } catch (e) {
+            return out; // private mode / blocked storage: no badges, no harm
+          }
+          try {
+            var active = mainJsVersion(await idbGet(db, "js/main.js"));
+            if (active) out.push(active);
+            var raw = await idbGet(db, GAMEVER_REGISTRY_KEY);
+            var reg = null;
+            try {
+              reg = typeof raw === "string" ? JSON.parse(raw) : raw;
+            } catch (e) {
+              reg = null;
+            }
+            if (reg && typeof reg === "object") {
+              Object.keys(reg).forEach(function (id) {
+                var v = reg[id] && reg[id].version;
+                if (v && out.indexOf(v) === -1) out.push(v);
+              });
+            }
+          } catch (e) {}
+          try {
+            db.close();
+          } catch (e) {}
+          return out;
+        }
+
+        function isImported(v) {
+          return !!(v && v.version && _imported.indexOf(v.version) !== -1);
+        }
+
+        // catalog
+        async function ensureCatalog() {
+          if (_cat) return _cat;
+          try {
+            var r = await fetch(CATALOG_URL, { cache: "no-cache" });
+            if (r.ok) _cat = await r.json();
+          } catch (e) {}
+          return _cat;
+        }
+
+        function appid() {
+          return (_cat && _cat.appid) || DEFAULT_APPID;
+        }
+        function depot() {
+          return (_cat && _cat.depot) || DEFAULT_DEPOT;
+        }
+
+        function renderCatalog() {
+          var box = $("dl-catalog");
+          var majors = (_cat && _cat.majors) || [];
+          if (!majors.length) {
+            box.innerHTML = '<p class="meta">No versions available.</p>';
+            return;
+          }
+          // When one of the listed builds is the one already imported, its
+          // group opens by default (and the row is badged below).
+          var matched = majors.some(function (mj) {
+            return (mj.versions || []).some(isImported);
+          });
+          box.innerHTML = "";
+          majors.forEach(function (mj, mi) {
+            var det = document.createElement("details");
+            det.className = "vmajor";
+            var hasFocus =
+              _focus &&
+              (mj.versions || []).some(function (v) {
+                return v.version === _focus;
+              });
+            var hasMatch = (mj.versions || []).some(isImported);
+            if (hasFocus || (!_focus && (hasMatch || (!matched && mi === 0)))) {
+              det.open = true;
+            }
+            var sum = document.createElement("summary");
+            sum.textContent =
+              (mj.major || "?") + (mj.label ? ": " + mj.label : "");
+            det.appendChild(sum);
+
+            (mj.versions || []).forEach(function (v) {
+              var row = document.createElement("div");
+              row.className = "vitem";
+              if (v.version) row.dataset.version = v.version;
+              var left = document.createElement("div");
+              left.innerHTML =
+                escapeHtml(v.name || v.version || "version") +
+                (isImported(v) ? '<span class="badge">imported</span>' : "") +
+                (v.date
+                  ? '<div class="vmeta">' + escapeHtml(v.date) + "</div>"
+                  : "");
+              var btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = "action-btn compact";
+              btn.textContent = "Download";
+              // Entries with no manifest id yet are listed but not
+              // downloadable: the id is what `download_depot` needs.
+              btn.disabled = !v.manifest;
+              if (!v.manifest) btn.title = "Manifest id not available yet";
+              btn.onclick = function () {
+                select(v);
+              };
+              row.appendChild(left);
+              row.appendChild(btn);
+              det.appendChild(row);
+            });
+            box.appendChild(det);
+          });
+        }
+
+        // Open the group holding `version`, scroll its row into view and
+        // outline it. Runs against the rendered DOM, so it works whether the
+        // catalog was just built or is being re-focused.
+        function applyFocus(version) {
+          if (!version) return;
+          var box = $("dl-catalog");
+          var row = null;
+          box.querySelectorAll(".vitem").forEach(function (r) {
+            if (r.dataset.version === version) row = r;
+          });
+          if (!row) return;
+          var det = row.closest("details.vmajor");
+          box.querySelectorAll("details.vmajor").forEach(function (d) {
+            d.open = d === det;
+          });
+          box.querySelectorAll(".vitem.dl-focus").forEach(function (r) {
+            r.classList.remove("dl-focus");
+          });
+          row.classList.add("dl-focus");
+          requestAnimationFrame(function () {
+            row.scrollIntoView({ block: "nearest" });
+          });
+        }
+
+        // wizard
+        // Show step `n`: swap the visible panel and reflect the stepper state.
+        // Steps 2-4 stay locked until a version is chosen.
+        function goStep(n) {
+          if (n > 1 && !_sel) return;
+          _step = n;
+          // The "Downloading <version>" line is context for steps 2-4 only.
+          $("dl-picked").hidden = n === 1 || !_sel;
+          document.querySelectorAll(".step-panel").forEach(function (p) {
+            p.hidden = Number(p.dataset.panel) !== n;
+          });
+          document.querySelectorAll("#dl-stepper .step").forEach(function (b) {
+            var s = Number(b.dataset.step);
+            b.classList.toggle("active", s === n);
+            b.classList.toggle("done", !!_sel && s < n);
+            b.disabled = s > 1 && !_sel;
+          });
+        }
+
+        // Where `download_depot` lands: always under the MAIN Steam root's
+        // content folder, so the OS default root is all we need (this mirrors
+        // loader.html's guessGameInstallPath). On mobile/unknown UAs an
+        // absolute path would only mislead, so only the relative tail is shown.
+        function steamContentPath() {
+          var rel = "steamapps/content/app_" + appid() + "/depot_" + depot();
+          var ua =
+            (navigator.userAgent || "") + " " + (navigator.platform || "");
+          if (isMobileUA()) return rel;
+          if (/Win(dows|32|64|CE|NT)?/i.test(ua)) {
+            return (
+              "C:\\Program Files (x86)\\Steam\\" + rel.replace(/\//g, "\\")
+            );
+          }
+          if (/Mac|Darwin/i.test(ua)) {
+            return "~/Library/Application Support/Steam/" + rel;
+          }
+          if (/Linux|CrOS|BSD/i.test(ua)) {
+            return "~/.local/share/Steam/" + rel;
+          }
+          return rel;
+        }
+
+        // Pull the real destination out of pasted Steam console output. The
+        // success line is `Depot download complete : "<path>" (manifest <id>)`,
+        // and <path> often carries a platform subdirectory (ubuntu12_32 and
+        // friends) the guess above cannot know. Falls back to any token holding
+        // `depot_<depot>`.
+        function parseDepotPath(text) {
+          if (!text) return null;
+          var m = text.match(/Depot download complete\s*:?\s*"([^"]+)"/i);
+          if (m) return m[1].trim();
+          var d = String(depot()).replace(/[^0-9A-Za-z_]/g, "");
+          var m2 = text.match(
+            new RegExp('([^\\s"\\r\\n]*depot_' + d + '[^\\s"\\r\\n]*)'),
+          );
+          return m2 ? m2[1].trim() : null;
+        }
+
+        var PATH_DEFAULT_NOTE =
+          "Best-guess default: paste the console output above to correct it " +
+          "for your machine.";
+
+        // Always display the destination with forward slashes: Steam's console
+        // (and the Windows default above) hand back backslashes, which are
+        // awkward to read and to paste back into a folder picker.
+        function setPath(p) {
+          $("dl-path").value = (p || "").replace(/\\/g, "/");
+        }
+
+        function resetPath() {
+          $("dl-console").value = "";
+          setPath(steamContentPath());
+          $("dl-path-src").textContent = PATH_DEFAULT_NOTE;
+        }
+
+        // Live-update the destination as the user pastes their console output.
+        function applyConsole() {
+          var raw = $("dl-console").value;
+          var p = parseDepotPath(raw);
+          if (p) {
+            setPath(p);
+            $("dl-path-src").textContent =
+              "Detected from your console output: this is where your files are.";
+          } else if (raw.trim()) {
+            setPath(steamContentPath());
+            $("dl-path-src").textContent =
+              'No path found yet: paste the whole output, including the ' +
+              '"Depot download complete" line.';
+          } else {
+            resetPathNote();
+          }
+        }
+
+        function resetPathNote() {
+          setPath(steamContentPath());
+          $("dl-path-src").textContent = PATH_DEFAULT_NOTE;
+        }
+
+        // Pick a version: fill in the command and the default folder, then
+        // advance the wizard to step 2.
+        function select(v) {
+          if (!v.manifest) return;
+          _sel = v;
+          var picked = $("dl-picked");
+          picked.hidden = false;
+          picked.innerHTML =
+            "Downloading <b>" +
+            escapeHtml(v.name || v.version || "version") +
+            "</b>" +
+            (isImported(v) ? " (already imported)" : "") +
+            ".";
+          $("dl-cmd").value =
+            "download_depot " + appid() + " " + depot() + " " + v.manifest;
+          resetPath();
+          setStatus("");
+          goStep(2);
+        }
+
+        // Copy a readonly field's value; report through the status line.
+        async function copyField(id) {
+          var el = $(id);
+          var ok = false;
+          try {
+            await navigator.clipboard.writeText(el.value);
+            ok = true;
+          } catch (e) {}
+          if (!ok) {
+            el.focus();
+            el.select();
+            try {
+              ok = document.execCommand("copy");
+            } catch (e2) {}
+          }
+          var what = id === "dl-path" ? "Folder path" : "Command";
+          setStatus(
+            ok
+              ? what +
+                  " copied." +
+                  (id === "dl-cmd"
+                    ? " Paste it into the Steam console and press Enter, then" +
+                      " wait for the download to finish."
+                    : "")
+              : "Couldn't copy automatically: select the text above and copy " +
+                  "it (Ctrl+C).",
+            ok ? "ok" : "error",
+          );
+        }
+
+        function wire() {
+          // No Back/Next buttons: doing each step's action advances the wizard.
+          $("dl-open-console").onclick = function () {
+            // Let the steam:// protocol handler fire, then move on.
+            goStep(3);
+          };
+          $("dl-copy").onclick = function () {
+            copyField("dl-cmd");
+            goStep(4);
+          };
+          $("dl-path-copy").onclick = function () {
+            copyField("dl-path");
+          };
+          $("dl-console").addEventListener("input", applyConsole);
+          // The step tabs are the only manual navigation (jump back to any
+          // step already reached).
+          document.querySelectorAll("#dl-stepper .step").forEach(function (b) {
+            b.onclick = function () {
+              goStep(Number(b.dataset.step));
+            };
+          });
+          resetPathNote();
+          goStep(1);
+        }
+
+        // A ?version=3.0.13 (or #v=3.0.13) deep link spotlights that build, so
+        // anything that knows which version a mod needs can link straight here.
+        function readFocus() {
+          try {
+            var q = new URLSearchParams(location.search).get("version");
+            if (q) return q.trim();
+          } catch (e) {}
+          var m = /(?:^|[#&])v=([^&]+)/.exec(location.hash || "");
+          return m ? decodeURIComponent(m[1]).trim() : null;
+        }
+
+        (async function init() {
+          if (isMobileUA()) $("dl-desktop-note").hidden = false;
+          _focus = readFocus();
+          wire();
+          _imported = await loadImportedVersions();
+          if (!(await ensureCatalog())) {
+            $("dl-catalog").innerHTML =
+              '<p class="meta">Could not load the version list right now. ' +
+              "Check your connection and reload this page to try again.</p>";
+            return;
+          }
+          renderCatalog();
+          applyFocus(_focus);
+        })();
+      })();
+    </script>
+  </body>
+</html>

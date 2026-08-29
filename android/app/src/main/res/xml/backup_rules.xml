@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and below (fullBackupContent). Back up ONLY the small native save
+     mirror. The game files live in the WebView's per-origin IndexedDB (under
+     app_webview) and are hundreds of MB, far over Auto Backup's 25 MB cap and
+     re-importable anyway, so they are deliberately left out. Using <include>
+     switches Auto Backup to allowlist mode: nothing else is uploaded. -->
+<full-backup-content>
+    <include domain="file" path="save-backup.json" />
+</full-backup-content>

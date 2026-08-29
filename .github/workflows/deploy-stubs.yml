@@ -1,0 +1,342 @@
+name: Deploy Stubs
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stubs
+  cancel-in-progress: false
+
+env:
+  STUB_CRATE: tools/desktop/user
+  STUB_TARGET: tools/desktop/target
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-2025
+            artifact: win-x64.exe
+          - platform: macos
+            os: macos-26
+            artifact: macos.zip
+          - platform: linux
+            os: ubuntu-24.04
+            artifact: linux-x86_64.AppImage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable, 2026-08-05
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 20
+      - name: Cache cargo
+        uses: actions/cache@v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ env.STUB_TARGET }}
+          key: ${{ matrix.os }}-stub-${{ hashFiles('tools/desktop/**/Cargo.toml', 'tools/desktop/Cargo.lock') }}
+      - name: Test the tools the stubs will carry
+        if: matrix.platform == 'linux'
+        run: |
+          node tools/test-mod-loader.js
+          node tools/test-mod-apply.js
+      # The GStreamer packages are here for the AppImage, not for the build:
+      # WebKit plays a theme's music through GStreamer, and the plugins that
+      # provide `appsink` and `autoaudiosink` are dlopened at runtime, so
+      # linuxdeploy never sees them and cannot bundle them on its own. They
+      # are copied into the AppDir further down.
+      - name: Linux Tauri deps
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev \
+            libgtk-3-dev patchelf \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            gstreamer1.0-pulseaudio gstreamer1.0-alsa
+      - name: Stamp the release version into the bundle
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const p = process.env.STUB_CRATE + "/src-tauri/tauri.conf.json";
+            const c = JSON.parse(fs.readFileSync(p, "utf8"));
+            c.version = process.argv[1];
+            fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
+          ' "$VERSION"
+      # The runtime is nearly the whole download, and the one setup-node
+      # installs on Linux and macOS still carries its debug sections: 123 MB
+      # where a stripped one is 106 MB, which is 4 MB off the compressed blob
+      # build.rs embeds. Nothing reads those symbols: the app runs Node as a
+      # subprocess and reports what it printed. The Windows build keeps its
+      # debug info in a separate PDB, so there is nothing to strip there.
+      - name: Stage this runner's Node as the bundled runtime
+        shell: bash
+        run: |
+          dest="$STUB_CRATE/src-tauri/runtime"
+          mkdir -p "$dest"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "$(command -v node)" "$dest/node.exe"
+            "$dest/node.exe" --version
+          else
+            cp "$(command -v node)" "$dest/node"
+            chmod +x "$dest/node"
+            cp "$dest/node" "$dest/node.full"
+            if [ "${{ runner.os }}" = "macOS" ]; then
+              # A signed Mach-O: -S keeps the load commands the signature
+              # covers, and the ad-hoc signature is renewed after the edit.
+              strip -S "$dest/node" 2>/dev/null || true
+              codesign -f -s - "$dest/node" 2>/dev/null || true
+            else
+              strip "$dest/node" 2>/dev/null || true
+            fi
+            # Four megabytes are not worth a failed release: whatever comes
+            # out has to still run, and if it does not the original goes back.
+            if "$dest/node" --version >/dev/null 2>&1; then
+              rm -f "$dest/node.full"
+            else
+              echo "::warning::stripped Node will not run; shipping it whole"
+              mv "$dest/node.full" "$dest/node"
+            fi
+            "$dest/node" --version
+          fi
+          node --version
+      - name: Build the mod installer stub
+        working-directory: ${{ env.STUB_CRATE }}
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
+        run: |
+          npm install
+          npx @tauri-apps/cli build
+      # An AppImage must never carry a library that the HOST's graphics
+      # drivers link against. linuxdeploy bundles GTK's whole dependency
+      # closure, which drags in libwayland-client and friends built against
+      # this runner's Ubuntu. On any host with a newer Mesa, libglvnd then
+      # dlopens the host's libEGL_mesa.so.0, which resolves libwayland-client
+      # to OUR older bundled copy and fails on a symbol it does not have
+      # (wl_fixes_interface, wayland 1.24). glvnd is left with no EGL vendor
+      # at all, so eglGetDisplay returns EGL_BAD_PARAMETER and WebKit's web
+      # process dies with "Could not create default EGL display:
+      # EGL_BAD_PARAMETER. Aborting..." before the window paints a pixel:
+      # a black frame, no error the user can act on. Every library dropped
+      # here is one the host must already have for GL to work at all, so
+      # unbundling them is strictly safer than shipping them. Tauri leaves
+      # the AppDir behind, so strip it and repack with the same plugin Tauri
+      # used.
+      # WebKit routes every <audio> and <video> through GStreamer, and the
+      # elements it asks for first (`appsink` and `autoaudiosink`) live in
+      # plugins that are dlopened, never linked. linuxdeploy therefore bundles
+      # libgstreamer and its companion libraries and NONE of the plugins, and
+      # the bundled core cannot fall back on the host's: it looks for them
+      # under the Ubuntu path this runner uses, and a host whose plugins are
+      # somewhere else (or built against a newer glib) has nothing to offer it.
+      # gst_element_factory_make() then returns NULL, WebKit connects a signal
+      # to it without checking, and the whole web process aborts into a grey
+      # window, seconds after a mod whose theme ships music finishes loading.
+      # So the plugins travel with the core that loads them, and the AppRun
+      # points GStreamer at them. The registry is kept private for the same
+      # reason: the shared one at ~/.cache/gstreamer-1.0 is the host's, and
+      # it describes the host's plugins.
+      - name: Bundle the GStreamer plugins WebKit dlopens
+        if: matrix.platform == 'linux'
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
+          ARCH: x86_64
+        run: |
+          set -e
+          appdir=$(echo "$STUB_TARGET"/release/bundle/appimage/*.AppDir)
+          [ -d "$appdir" ] || { echo "::error::no AppDir at $appdir"; exit 1; }
+          gst=/usr/lib/x86_64-linux-gnu/gstreamer-1.0
+          scanner=/usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner
+          mkdir -p "$appdir/usr/lib/gstreamer-1.0"
+          cp "$gst"/*.so "$appdir/usr/lib/gstreamer-1.0/"
+          cp "$scanner" "$appdir/usr/lib/gstreamer-1.0/"
+          # The plugins' own dependencies (libmpg123, libvorbis, libpulse ...)
+          # are not in the AppDir either, and a plugin that cannot load is a
+          # plugin that is not there.
+          linuxdeploy=$(ls "$HOME"/.cache/tauri/linuxdeploy-x86_64.AppImage \
+                        2>/dev/null | head -1)
+          if [ -z "$linuxdeploy" ]; then
+            echo "::error::linuxdeploy is not in the Tauri cache"
+            exit 1
+          fi
+          "$linuxdeploy" --appdir "$appdir" \
+            --deploy-deps-only "$appdir/usr/lib/gstreamer-1.0"
+          hook="$appdir/apprun-hooks/tcoaal-gstreamer.sh"
+          cat > "$hook" <<'SH'
+          #! /usr/bin/env bash
+          export APPDIR="${APPDIR:-"$(dirname "$(realpath "$0")")"}"
+          export GST_PLUGIN_SYSTEM_PATH_1_0="$APPDIR/usr/lib/gstreamer-1.0"
+          export GST_PLUGIN_PATH_1_0="$APPDIR/usr/lib/gstreamer-1.0"
+          export GST_PLUGIN_SCANNER="$APPDIR/usr/lib/gstreamer-1.0/gst-plugin-scanner"
+          export GST_REGISTRY_1_0="${XDG_CACHE_HOME:-$HOME/.cache}/tcoaal-mod-installer/gst-registry-$(uname -m).bin"
+          mkdir -p "$(dirname "$GST_REGISTRY_1_0")" 2>/dev/null || true
+          SH
+          # linuxdeploy's AppRun sources the hooks its own plugins registered,
+          # by name, so ours has to be added to the list.
+          sed -i 's|^exec |source "$this_dir"/apprun-hooks/"tcoaal-gstreamer.sh"\nexec |' \
+            "$appdir/AppRun"
+          for want in libgstapp.so libgstautodetect.so libgstcoreelements.so \
+                      libgstplayback.so libgsttypefindfunctions.so \
+                      libgstmpg123.so libgstogg.so gst-plugin-scanner; do
+            [ -e "$appdir/usr/lib/gstreamer-1.0/$want" ] || {
+              echo "::error::$want was not bundled"; exit 1; }
+          done
+          grep -q 'tcoaal-gstreamer.sh' "$appdir/AppRun" || {
+            echo "::error::the AppRun does not source the GStreamer hook"
+            exit 1
+          }
+      - name: Unbundle the host graphics stack and repack the AppImage
+        if: matrix.platform == 'linux'
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
+          ARCH: x86_64
+        run: |
+          set -e
+          appdir=$(echo "$STUB_TARGET"/release/bundle/appimage/*.AppDir)
+          [ -d "$appdir" ] || { echo "no AppDir at $appdir"; exit 1; }
+          find "$appdir/usr/lib" -maxdepth 1 \
+            \( -name 'libwayland-*.so.*' -o -name 'libdrm.so.*' \
+               -o -name 'libgbm.so.*' -o -name 'libxcb*.so.*' \
+               -o -name 'libzstd.so.*' -o -name 'libelf.so.*' \) \
+            -delete
+          if find "$appdir/usr/lib" -maxdepth 1 -name 'libwayland-client.so.*' \
+             | grep -q .; then
+            echo "libwayland-client is still bundled"; exit 1
+          fi
+          plugin=$(ls "$HOME"/.cache/tauri/linuxdeploy-plugin-appimage*.AppImage \
+                   2>/dev/null | head -1)
+          if [ -z "$plugin" ]; then
+            echo "the linuxdeploy appimage plugin is not in the Tauri cache"
+            exit 1
+          fi
+          rm -f "$STUB_TARGET"/release/bundle/appimage/*.AppImage
+          OUTPUT="$PWD/$STUB_TARGET/release/bundle/appimage/installer-x86_64.AppImage" \
+            "$plugin" --appdir "$appdir"
+      - name: Collect the artifact
+        shell: bash
+        run: |
+          mkdir -p out
+          case "${{ matrix.artifact }}" in
+            win-x64.exe)
+              cp "$STUB_TARGET/release/tcoaal-mod-installer.exe" \
+                 "out/${{ matrix.artifact }}" ;;
+            macos.zip)
+              cd "$STUB_TARGET/release/bundle/macos"
+              zip -qry "$GITHUB_WORKSPACE/out/${{ matrix.artifact }}" \
+                 "TCOAAL Mod Installer.app" ;;
+            linux-x86_64.AppImage)
+              cp "$STUB_TARGET"/release/bundle/appimage/*.AppImage \
+                 "out/${{ matrix.artifact }}" ;;
+          esac
+      # On Windows this stamps the exe's resources through the same
+      # StubStamp.stampWindows() create.html uses, which has to append a
+      # section to an MSVC-linked binary, and then runs the result, so the
+      # rewritten PE is proven loadable rather than merely well-shaped.
+      - name: Prove the stub installs a mod stamped into it
+        shell: bash
+        run: |
+          node tools/test-stub-stamp.js "out/${{ matrix.artifact }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: stub-${{ matrix.artifact }}
+          path: out/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  # The built set is stored as the assets of a `stub/v<version>` GitHub
+  # Release, the same way deploy-android.yml stores its APK. It cannot be
+  # stored in a branch: github.com rejects any pushed file over 100 MB and the
+  # Linux AppImage is already past that (the AppImage bundles webkit2gtk and
+  # the embedded Node runtime, so it only grows). Release assets take 2 GB
+  # each, are permanent per version, and are what deploy-web.yml pulls from.
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      # The checkout is for one line: the package format these stubs read.
+      # Each stub embeds this commit's mod-loader and mod-package.js, so the
+      # format is that file's FORMAT, and create.html refuses to stamp a stub
+      # whose format is not its own (the installer could not open its own
+      # payload).
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          path: incoming
+          pattern: stub-*
+          merge-multiple: true
+      - name: Assemble stub/ and stubs.json
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p stub
+          find incoming -type f -exec cp {} stub/ \;
+          node -e '
+            const fs = require("fs"), crypto = require("crypto");
+            const pkg = fs.readFileSync("app/js/libs/mod-package.js", "utf8");
+            const format = (pkg.match(/var FORMAT = "(tcoaal-mod\/\d+)"/) || [])[1];
+            if (!format) {
+              console.error("::error::mod-package.js declares no FORMAT");
+              process.exit(1);
+            }
+            const out = {};
+            for (const f of fs.readdirSync("stub")) {
+              if (f === "stubs.json") continue;
+              const b = fs.readFileSync("stub/" + f);
+              out[f] = {
+                file: f,
+                sha256: crypto.createHash("sha256").update(b).digest("hex"),
+                size: b.length,
+                version: process.argv[1],
+                format: format,
+              };
+            }
+            fs.writeFileSync("stub/stubs.json", JSON.stringify(out, null, 2));
+          ' "$VERSION"
+      # stubs.json ships as an asset too: deploy-web.yml serves the downloaded
+      # set verbatim at /stub/, and app/create.html reads /stub/stubs.json to
+      # get the sha256 it checks each stub against before stamping it.
+      - name: Publish the set as the stub release
+        uses: softprops/action-gh-release@v3.0.1
+        with:
+          tag_name: stub/v${{ inputs.version }}
+          name: Installer stubs v${{ inputs.version }}
+          target_commitish: ${{ github.sha }}
+          files: stub/*
+          fail_on_unmatched_files: true
+          # The version release published at the end of release.yml is the
+          # latest one; this is a store, not a headline.
+          make_latest: false
+      - name: Upload the published set as one artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-stubs
+          path: stub
+          if-no-files-found: error
