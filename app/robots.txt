@@ -1,0 +1,42 @@
+User-agent: *
+Allow: /
+Allow: /loader.html
+Allow: /notice.html
+Allow: /NOTICE.md
+Allow: /img/
+
+# Internal / utility pages: not useful in search results.
+Disallow: /lock.html
+Disallow: /lock.json
+Disallow: /migrate.html
+Disallow: /migrate-incoming.html
+Disallow: /test.html
+Disallow: /expected-files.json
+Disallow: /sw.js
+
+# Mod-packaging tool: unlisted, not for search discovery.
+Disallow: /create.html
+
+# Game assets and mod payloads are huge, hashed, encrypted and meaningless
+# to a search engine. Keep them out of the index.
+Disallow: /www/
+Disallow: /mods/*/www/
+Disallow: /*.rpgsave$
+
+# AI scrapers: they don't drive game traffic and inflate egress.
+User-agent: GPTBot
+Disallow: /
+User-agent: ClaudeBot
+Disallow: /
+User-agent: anthropic-ai
+Disallow: /
+User-agent: CCBot
+Disallow: /
+User-agent: Google-Extended
+Disallow: /
+User-agent: PerplexityBot
+Disallow: /
+User-agent: Bytespider
+Disallow: /
+
+Sitemap: https://tcoaal.app/sitemap.xml

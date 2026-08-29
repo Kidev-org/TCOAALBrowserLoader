@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ (targetSdk 31+). Cloud backup survives a factory reset / new
+     device; device transfer covers phone-to-phone copy. In both cases only the
+     tiny save mirror travels. See backup_rules.xml for the rationale. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="save-backup.json" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="save-backup.json" />
+    </device-transfer>
+</data-extraction-rules>

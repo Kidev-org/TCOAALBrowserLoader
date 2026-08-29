@@ -1,0 +1,268 @@
+{
+  "_comment": "TCOAAL Steam version catalog for the loader's Download-game tab. Generated/maintained by tools/update-game-manifest-ids.js - do not hand-edit the entries; run that tool and commit. The loader pulls this file from the repo's latest commit (https://raw.githubusercontent.com/Kidev-org/TCOAALBrowserLoader/main/tools/tcoaal-versions.json), so one commit benefits every client. Steam's public Web API does NOT expose historical depot manifest IDs (that is SteamDB's archived data): read them from https://steamdb.info/patchnotes/<code>/ (Depot 2378901 'Manifest ID changed -> <id>') and add with: node tools/update-game-manifest-ids.js --add --manifest <id> --name <s> --version <s>. Entries with an empty manifest show in the list but cannot be downloaded until filled in.",
+  "appid": "2378900",
+  "depot": "2378901",
+  "updated": "2026-06-19",
+  "source": "https://steamdb.info/app/2378900/patchnotes/",
+  "majors": [
+    {
+      "major": "3.x",
+      "label": "Cry About It!",
+      "versions": [
+        {
+          "name": "Minor Patch v3.0.13",
+          "version": "3.0.13",
+          "date": "2026-04-05",
+          "patchnote": "22651024",
+          "manifest": "3682254389579820333",
+          "buildid": "22651024"
+        },
+        {
+          "name": "Minor Patch v3.0.12",
+          "version": "3.0.12",
+          "date": "2026-04-01",
+          "patchnote": "22550309",
+          "manifest": "3821027825001051177",
+          "buildid": "22550309"
+        },
+        {
+          "name": "Minor Patch v3.0.11",
+          "version": "3.0.11",
+          "date": "2025-05-02",
+          "patchnote": "18324524",
+          "manifest": "4152734845025783675",
+          "buildid": "18324524"
+        },
+        {
+          "name": "Minor Patch v3.0.10",
+          "version": "3.0.10",
+          "date": "2025-04-18",
+          "patchnote": "18154567",
+          "manifest": "8672989161033506886",
+          "buildid": "18154567"
+        },
+        {
+          "name": "Minor Patch v3.0.9",
+          "version": "3.0.9",
+          "date": "2025-04-15",
+          "patchnote": "18111683",
+          "manifest": "361498792333601334",
+          "buildid": "18111683"
+        },
+        {
+          "name": "Hot Fix v3.0.8",
+          "version": "3.0.8",
+          "date": "2025-04-12",
+          "patchnote": "18083012",
+          "manifest": "511131703322984784",
+          "buildid": "18083012"
+        },
+        {
+          "name": "Minor Patch v3.0.7",
+          "version": "3.0.7",
+          "date": "2025-04-11",
+          "patchnote": "18075037",
+          "manifest": "4557953780973031589",
+          "buildid": "18075037"
+        },
+        {
+          "name": "Minor Patch v3.0.6",
+          "version": "3.0.6",
+          "date": "2025-04-07",
+          "patchnote": "18014965",
+          "manifest": "6835314039280821668",
+          "buildid": "18014965"
+        },
+        {
+          "name": "Minor Patch v3.0.5",
+          "version": "3.0.5",
+          "date": "2025-04-05",
+          "patchnote": "17996594",
+          "manifest": "736977287424974995",
+          "buildid": "17996594"
+        },
+        {
+          "name": "Minor Patch v3.0.4",
+          "version": "3.0.4",
+          "date": "2025-04-04",
+          "patchnote": "17988841",
+          "manifest": "34799485407114270",
+          "buildid": "17988841"
+        },
+        {
+          "name": "Minor Patch v3.0.3",
+          "version": "3.0.3",
+          "date": "2025-04-03",
+          "patchnote": "17966025",
+          "manifest": "7465232884546629618",
+          "buildid": "17966025"
+        },
+        {
+          "name": "Minor Patch v3.0.2",
+          "version": "3.0.2",
+          "date": "2025-04-01",
+          "patchnote": "17944330",
+          "manifest": "9153310938885203431",
+          "buildid": "17944330"
+        },
+        {
+          "name": "Minor Patch v3.0.1",
+          "version": "3.0.1",
+          "date": "2025-04-01",
+          "patchnote": "17942031",
+          "manifest": "7415012965776985886",
+          "buildid": "17942031"
+        },
+        {
+          "name": "Cry About It! Update (hotfix)",
+          "version": "3.0.0.1",
+          "date": "2025-04-01",
+          "patchnote": "17935743",
+          "manifest": "8998777955119680966",
+          "buildid": "17935743"
+        },
+        {
+          "name": "Cry About It! Update (initial build)",
+          "version": "3.0.0.0",
+          "date": "2025-04-01",
+          "patchnote": "17931421",
+          "manifest": "4310878353924993813",
+          "buildid": "17931421"
+        }
+
+      ]
+    },
+    {
+      "major": "2.x",
+      "label": "Episode 2",
+      "versions": [
+        {
+          "name": "Hot Fix v2.0.14",
+          "version": "2.0.14",
+          "date": "2024-07-02",
+          "patchnote": "14910575",
+          "manifest": "7982838317554904260",
+          "buildid": "14910575"
+        },
+        {
+          "name": "Minor Patch v2.0.13",
+          "version": "2.0.13",
+          "date": "2024-06-26",
+          "patchnote": "14849539",
+          "manifest": "8119639790473324557",
+          "buildid": "14849539"
+        },
+        {
+          "name": "Minor Patch v2.0.12",
+          "version": "2.0.12",
+          "date": "2024-06-01",
+          "patchnote": "23784539",
+          "manifest": "6810137990878625684",
+          "buildid": "23784539"
+        },
+        {
+          "name": "Hot Fix v2.0.11",
+          "version": "2.0.11",
+          "date": "2024-03-03",
+          "patchnote": "13626464",
+          "manifest": "5014339772439126100",
+          "buildid": "13626464"
+        },
+        {
+          "name": "Minor Patch v2.0.10",
+          "version": "2.0.10",
+          "date": "2024-03-01",
+          "patchnote": "13566207",
+          "manifest": "4550960909541444492",
+          "buildid": "13566207"
+        },
+        {
+          "name": "Minor Patch v2.0.9",
+          "version": "2.0.9",
+          "date": "2024-01-02",
+          "patchnote": "13073959",
+          "manifest": "5686694880414661892",
+          "buildid": "13073959"
+        },
+        {
+          "name": "Minor Patch v2.0.8",
+          "version": "2.0.8",
+          "date": "2023-11-04",
+          "patchnote": "12619503",
+          "manifest": "1146257740280966360",
+          "buildid": "12619503"
+        },
+        {
+          "name": "Minor Patch v2.0.7",
+          "version": "2.0.7",
+          "date": "2023-11-03",
+          "patchnote": "12614826",
+          "manifest": "5284021687683706315",
+          "buildid": "12614826"
+        },
+        {
+          "name": "Minor Patch v2.0.6",
+          "version": "2.0.6",
+          "date": "2023-10-26",
+          "patchnote": "12539261",
+          "manifest": "1572376483837422817",
+          "buildid": "12539261"
+        },
+        {
+          "name": "Minor Patch v2.0.5",
+          "version": "2.0.5",
+          "date": "2023-10-22",
+          "patchnote": "12504316",
+          "manifest": "5020660339650057029",
+          "buildid": "12504316"
+        },
+        {
+          "name": "Minor Patch v2.0.4",
+          "version": "2.0.4",
+          "date": "2023-10-17",
+          "patchnote": "12460006",
+          "manifest": "6924486777767461499",
+          "buildid": "12460006"
+        },
+        {
+          "name": "Minor Patch v2.0.3",
+          "version": "2.0.3",
+          "date": "2023-10-15",
+          "patchnote": "12444682",
+          "manifest": "1900775290110674408",
+          "buildid": "12444682"
+        },
+        {
+          "name": "Minor Patch v2.0.2",
+          "version": "2.0.2",
+          "date": "2023-10-14",
+          "patchnote": "12440442",
+          "manifest": "7350299307428416243",
+          "buildid": "12440442"
+        },
+        {
+          "name": "Minor Patch v2.0.1",
+          "version": "2.0.1",
+          "date": "2023-10-13",
+          "patchnote": "12436084",
+          "manifest": "5775385804131959813",
+          "buildid": "12436084"
+        }
+      ]
+    },
+    {
+      "major": "1.x",
+      "label": "Episode 1",
+      "versions": [
+        {
+          "name": "Early Access Release!",
+          "version": "1.0.0",
+          "date": "2023-10-13",
+          "patchnote": "12430282",
+          "manifest": "1662178977616863424",
+          "buildid": "12430282"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 495 495"
+  width="495"
+  height="495"
+  role="img"
+  aria-label="Three red eyes on a black sphere"
+>
+  <!--
+    Vector version of app/favicon.png: three slit-pupil eyes on a black sphere.
+    Positions, sizes and rotations are measured from the PNG (connected-
+    component analysis of the red pixels), so this drops in as a replacement at
+    any size:
+
+      centre  (244,191)  153 x 352   0 deg
+      left    ( 87,272)  137 x 269  -15.6 deg
+      right   (391,322)  148 x 258  +21.8 deg
+
+    Each eye is the same unit leaf path drawn four times at decreasing scale:
+    bright red rim -> dark red body -> black interior -> the red slit down the
+    middle. Scaling the shape rather than stroking it keeps the rim thickness
+    proportional to each eye, which is what the original does.
+  -->
+  <defs>
+    <!-- Unit vesica: half-width 1, half-height 1, points at top and bottom. -->
+    <path id="fx-leaf" d="M 0,-1 C 1.02,-0.7 1.02,0.7 0,1 C -1.02,0.7 -1.02,-0.7 0,-1 Z" />
+
+    <!-- The sphere is flat black in the source; a barely-there radial lift
+         keeps it from looking like a dead hole at large sizes without
+         reading as a gradient at favicon size. -->
+    <radialGradient id="fx-sphere" cx="0.42" cy="0.36" r="0.78">
+      <stop offset="0" stop-color="#141414" />
+      <stop offset="0.55" stop-color="#080808" />
+      <stop offset="1" stop-color="#000000" />
+    </radialGradient>
+
+    <!-- Eye interior: an ember glow behind the red slit. Warm dark-red core
+         (offset a touch up, where the pupil sits) fading to black at the rim,
+         so each eye reads as lit from within rather than a flat black hole.
+         objectBoundingBox maps to the leaf's -1..1 box, so it follows every
+         eye's own shape and non-uniform scale. -->
+    <radialGradient id="fx-iris" cx="0.5" cy="0.42" r="0.62">
+      <stop offset="0" stop-color="#7a1010" />
+      <stop offset="0.45" stop-color="#3a0707" />
+      <stop offset="1" stop-color="#000000" />
+    </radialGradient>
+  </defs>
+
+  <circle cx="247.5" cy="247.5" r="246" fill="url(#fx-sphere)" />
+
+  <!-- Centre eye: upright, the largest of the three. -->
+  <g transform="translate(244,191) rotate(-0.4) scale(80,178)">
+    <use href="#fx-leaf" fill="#ff0000" />
+    <use href="#fx-leaf" fill="#8b0000" transform="scale(0.85)" />
+    <use href="#fx-leaf" fill="url(#fx-iris)" transform="scale(0.67)" />
+    <use href="#fx-leaf" fill="#ff0000" transform="scale(0.09,0.56)" />
+  </g>
+
+  <!-- Left eye: leans anticlockwise, narrower. -->
+  <g transform="translate(87,272) rotate(-15.6) scale(62,132)">
+    <use href="#fx-leaf" fill="#ff0000" />
+    <use href="#fx-leaf" fill="#8b0000" transform="scale(0.85)" />
+    <use href="#fx-leaf" fill="url(#fx-iris)" transform="scale(0.67)" />
+    <use href="#fx-leaf" fill="#ff0000" transform="scale(0.11,0.56)" />
+  </g>
+
+  <!-- Right eye: leans clockwise, narrower. -->
+  <g transform="translate(391,322) rotate(21.8) scale(60,129)">
+    <use href="#fx-leaf" fill="#ff0000" />
+    <use href="#fx-leaf" fill="#8b0000" transform="scale(0.85)" />
+    <use href="#fx-leaf" fill="url(#fx-iris)" transform="scale(0.67)" />
+    <use href="#fx-leaf" fill="#ff0000" transform="scale(0.12,0.56)" />
+  </g>
+</svg>

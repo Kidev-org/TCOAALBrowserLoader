@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[package]
+name = "tcoaal-mod-installer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Install and uninstall TCOAAL mods on your game"
+
+[[bin]]
+name = "tcoaal-mod-installer"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+# Compresses the bundled Node runtime into the binary; see build.rs.
+flate2 = "1"
+
+[dependencies]
+tauri = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-shell = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tcoaal_desktop_core = { path = "../../core" }
+# Unpacks the runtime build.rs embedded.
+flate2 = "1"
+# Decodes the mod's icon.png into the RGBA the window icon takes. The `png`
+# crate rather than tauri's `image-png` feature: that feature pulls the whole
+# `image` crate (and its own dependency tree) into every stub build to do the
+# one thing 30 lines here already do.
+png = "0.17"

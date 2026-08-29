@@ -1,0 +1,482 @@
+<!doctype html>
+<!--
+  TCOAAL Browser Player
+  Copyright (C) 2026 kidev
+
+  This program is free software: you can redistribute it and/or modify it
+  under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or (at your
+  option) any later version. This program is distributed in the hope that it
+  will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+  of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+  General Public License for more details: <https://www.gnu.org/licenses/>.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Notice: purpose, scope and design | TCOAAL Browser Player</title>
+    <meta
+      name="description"
+      content="What the TCOAAL Browser Player is, what it deliberately does not do, and why it is built the way it is. It distributes no game content and earns no money."
+    />
+    <meta name="author" content="kidev" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#ec83c3" />
+    <link rel="canonical" href="https://tcoaal.app/notice.html" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <script>
+      (function () {
+        var l = document.createElement("link");
+        l.rel = "icon";
+        l.id = "favicon";
+        l.type = "image/x-icon";
+        l.href = "/favicon.ico?t=" + Date.now();
+        document.head.appendChild(l);
+      })();
+    </script>
+    <style>
+      :root {
+        --purple: #ec83c3;
+        --default: #d3d0c0;
+        --white: #ffffff;
+        --black: #000000;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* Same treatment as loader.html: the art lives on the root so it is
+         painted full-screen first, and the page scrolls over a fixed copy of
+         it without the scrollbar ever reflowing the background. */
+      html {
+        scrollbar-width: none;
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg.webp") top center / cover no-repeat,
+          var(--black);
+      }
+      html.android-app {
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg-android.webp") top center / cover no-repeat,
+          var(--black);
+      }
+      html::-webkit-scrollbar,
+      body::-webkit-scrollbar {
+        display: none;
+      }
+
+      body {
+        background: transparent;
+        color: var(--default);
+        font-family: "Georgia", serif;
+        min-height: 100vh;
+        line-height: 1.65;
+      }
+
+      /* Fixed art layer, identical to the loader's .overlay so navigating
+         between the two pages does not swap the backdrop. */
+      .bg {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        z-index: 0;
+        pointer-events: none;
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg.webp") top center / cover no-repeat,
+          var(--black);
+      }
+      body.android-app .bg {
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg-android.webp") top center / cover no-repeat,
+          var(--black);
+      }
+
+      .wrap {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        max-width: 820px;
+        margin: 0 auto;
+        padding: clamp(56px, 7vmin, 88px) clamp(16px, 3vmin, 32px)
+          clamp(40px, 6vmin, 72px);
+      }
+
+      .back-link {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        z-index: 10;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: rgba(15, 15, 15, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.9);
+        text-decoration: none;
+        font-size: 0.85em;
+        transition: all 0.3s ease;
+      }
+      .back-link:hover {
+        color: var(--white);
+        background: rgba(236, 131, 195, 0.35);
+        border-color: rgba(236, 131, 195, 0.6);
+        transform: translateY(-1px);
+      }
+      .back-link svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex: 0 0 auto;
+      }
+
+      .doc {
+        padding: clamp(20px, 3vmin, 40px) clamp(18px, 3vmin, 44px);
+        background: rgba(20, 20, 20, 0.88);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        box-shadow:
+          0 6px 24px rgba(0, 0, 0, 0.55),
+          inset 0 0 24px rgba(0, 0, 0, 0.35);
+        font-size: clamp(14px, 1.5vmin, 17px);
+      }
+
+      .doc h1 {
+        color: var(--white);
+        font-size: clamp(22px, 3vmin, 32px);
+        font-weight: normal;
+        letter-spacing: 0.04em;
+        margin: 0 0 clamp(14px, 2vmin, 24px);
+        padding-bottom: clamp(10px, 1.5vmin, 18px);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      }
+      .doc h2 {
+        color: var(--purple);
+        font-size: clamp(15px, 1.9vmin, 20px);
+        font-weight: normal;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin: clamp(22px, 3.2vmin, 40px) 0 clamp(8px, 1.2vmin, 14px);
+      }
+      .doc h3 {
+        color: rgba(255, 255, 255, 0.9);
+        font-size: clamp(14px, 1.6vmin, 18px);
+        font-weight: bold;
+        margin: clamp(16px, 2.4vmin, 28px) 0 clamp(6px, 1vmin, 10px);
+      }
+      .doc p {
+        margin: 0 0 clamp(10px, 1.4vmin, 16px);
+      }
+      .doc ul {
+        margin: 0 0 clamp(10px, 1.4vmin, 16px);
+        padding-left: 1.3em;
+      }
+      .doc li {
+        margin: 0 0 6px;
+      }
+      .doc strong {
+        color: rgba(255, 255, 255, 0.92);
+      }
+      .doc em {
+        color: rgba(255, 255, 255, 0.86);
+      }
+      .doc code {
+        font-family: "Consolas", "Menlo", monospace;
+        font-size: 0.9em;
+        padding: 1px 5px;
+        border-radius: 3px;
+        background: rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.85);
+        overflow-wrap: anywhere;
+      }
+      .doc pre {
+        margin: 0 0 clamp(10px, 1.4vmin, 16px);
+        padding: 12px 14px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        overflow-x: auto;
+      }
+      .doc pre code {
+        padding: 0;
+        border: none;
+        background: none;
+      }
+      .doc a {
+        color: var(--purple);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        overflow-wrap: anywhere;
+      }
+      .doc a:hover {
+        color: var(--white);
+      }
+
+      .doc-status {
+        text-align: center;
+        color: rgba(255, 255, 255, 0.55);
+      }
+      .doc-status a {
+        color: var(--purple);
+      }
+
+      @media (max-width: 720px) {
+        .wrap {
+          padding-top: 64px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      // Match the loader's Android flagging so the page picks the same art.
+      (function () {
+        try {
+          if (/TCOAALApp\//.test(navigator.userAgent)) {
+            document.body.classList.add("android-app");
+            document.documentElement.classList.add("android-app");
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <div class="bg"></div>
+
+    <a class="back-link" href="loader.html" aria-label="Back to loader">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M19 12H5M12 19l-7-7 7-7" />
+      </svg>
+      <span>Back</span>
+    </a>
+
+    <main class="wrap">
+      <article class="doc" id="doc">
+        <p class="doc-status" id="doc-status">Loading the notice...</p>
+      </article>
+    </main>
+
+    <script>
+      // NOTICE.md is the single source of truth for this text: it lives at the
+      // repo root, is deployed alongside the app, and is rendered here rather
+      // than duplicated as HTML (two copies of a statement of purpose is
+      // exactly the kind of thing that silently drifts).
+      //
+      // The subset of Markdown below is only what NOTICE.md actually uses:
+      // ATX headings, paragraphs, "-" bullet lists with indented continuation
+      // lines, bold/italic/code spans, inline and bare links. It is deliberately
+      // not a general Markdown implementation.
+      (function () {
+        var SOURCE = "/NOTICE.md";
+
+        function escapeHtml(s) {
+          return String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+        }
+
+        // Inline spans. Code is extracted first and re-inserted last so that
+        // emphasis and link syntax inside a code span stays literal. The
+        // placeholder is NUL-delimited so it cannot collide with ordinary
+        // prose the way a " 0 " style marker would ("Directive 2009/24/EC").
+        function inline(text) {
+          var codes = [];
+          var out = String(text).replace(/`([^`]+)`/g, function (m, c) {
+            codes.push(c);
+            return "\u0000" + (codes.length - 1) + "\u0000";
+          });
+
+          out = escapeHtml(out);
+
+          // [label](url)
+          out = out.replace(
+            /\[([^\]]+)\]\(([^)\s]+)\)/g,
+            function (m, label, href) {
+              return link(href, label);
+            },
+          );
+          // Bare http(s) URLs not already inside an href="...".
+          out = out.replace(/(^|[\s(])(https?:\/\/[^\s<>()]+)/g, function (
+            m,
+            pre,
+            url,
+          ) {
+            return pre + link(url, url);
+          });
+          // Bare email addresses.
+          out = out.replace(
+            /(^|[\s(])([\w.+-]+@[\w-]+\.[\w.-]+)/g,
+            function (m, pre, addr) {
+              return pre + link("mailto:" + addr, addr);
+            },
+          );
+
+          out = out
+            .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+            .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
+
+          return out.replace(/\u0000(\d+)\u0000/g, function (m, i) {
+            return "<code>" + escapeHtml(codes[+i]) + "</code>";
+          });
+        }
+
+        function link(href, label) {
+          var external = !/^mailto:/.test(href);
+          return (
+            '<a href="' +
+            escapeHtml(href) +
+            '"' +
+            (external ? ' target="_blank" rel="noopener"' : "") +
+            ">" +
+            escapeHtml(label) +
+            "</a>"
+          );
+        }
+
+        function render(md) {
+          var lines = String(md).replace(/\r\n?/g, "\n").split("\n");
+          var html = [];
+          var para = []; // buffered paragraph lines (joined with a space)
+          var items = null; // buffered list item texts
+          var fence = null; // buffered code-fence lines
+
+          function flushPara() {
+            if (!para.length) return;
+            html.push("<p>" + inline(para.join(" ")) + "</p>");
+            para = [];
+          }
+          function flushList() {
+            if (!items) return;
+            html.push(
+              "<ul>" +
+                items
+                  .map(function (t) {
+                    return "<li>" + inline(t) + "</li>";
+                  })
+                  .join("") +
+                "</ul>",
+            );
+            items = null;
+          }
+          function flush() {
+            flushPara();
+            flushList();
+          }
+
+          for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+
+            if (/^\s*```/.test(line)) {
+              if (fence === null) {
+                flush();
+                fence = [];
+              } else {
+                html.push(
+                  "<pre><code>" + escapeHtml(fence.join("\n")) + "</code></pre>",
+                );
+                fence = null;
+              }
+              continue;
+            }
+            if (fence !== null) {
+              fence.push(line);
+              continue;
+            }
+
+            if (!line.trim()) {
+              flush();
+              continue;
+            }
+
+            var heading = /^(#{1,3})\s+(.*)$/.exec(line);
+            if (heading) {
+              flush();
+              var level = heading[1].length;
+              html.push(
+                "<h" + level + ">" + inline(heading[2]) + "</h" + level + ">",
+              );
+              continue;
+            }
+
+            var bullet = /^\s*[-*]\s+(.*)$/.exec(line);
+            if (bullet) {
+              flushPara();
+              if (!items) items = [];
+              items.push(bullet[1]);
+              continue;
+            }
+
+            // An indented line under a bullet continues that bullet; anything
+            // else continues (or starts) a paragraph.
+            if (items && /^\s{2,}/.test(line)) {
+              items[items.length - 1] += " " + line.trim();
+              continue;
+            }
+            flushList();
+            para.push(line.trim());
+          }
+          flush();
+          return html.join("\n");
+        }
+
+        var doc = document.getElementById("doc");
+        fetch(SOURCE, { cache: "no-cache" })
+          .then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.text();
+          })
+          .then(function (md) {
+            doc.innerHTML = render(md);
+            document.title =
+              (doc.querySelector("h1") || {}).textContent ||
+              "Notice | TCOAAL Browser Player";
+          })
+          .catch(function (e) {
+            var status = document.getElementById("doc-status");
+            if (!status) return;
+            status.innerHTML =
+              "The notice could not be loaded (" +
+              escapeHtml(e && e.message ? e.message : "error") +
+              '). Read it on <a href="https://github.com/Kidev-org/TCOAALBrowserLoader/blob/main/NOTICE.md" target="_blank" rel="noopener">GitHub</a> instead.';
+          });
+      })();
+    </script>
+  </body>
+</html>

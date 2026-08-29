@@ -1,0 +1,1251 @@
+<!doctype html>
+<!--
+  TCOAAL Browser Player
+  Copyright (C) 2026 kidev
+
+  This program is free software: you can redistribute it and/or modify it
+  under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or (at your
+  option) any later version. This program is distributed in the hope that it
+  will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+  of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+  General Public License for more details: <https://www.gnu.org/licenses/>.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Save File Migration | TCOAAL Browser Player</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        background: #0a0a0a;
+        color: #d3d0c0;
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: Georgia, serif;
+        /* Default cursor: this page has no canvas overriding it. */
+        cursor: default;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: clamp(16px, 3vw, 32px);
+        box-sizing: border-box;
+      }
+      .modal {
+        /* Mirror lock.html: ~88% viewport on small screens, capped on huge
+           monitors so line lengths stay readable. */
+        width: min(820px, 88vw);
+        max-width: 100%;
+        text-align: center;
+      }
+      h1 {
+        color: #ec83c3;
+        font-size: clamp(20px, 2.6vw, 30px);
+        font-weight: normal;
+        letter-spacing: 0.05em;
+        margin: 0 0 clamp(12px, 1.6vw, 18px);
+      }
+      p {
+        color: rgba(255, 255, 255, 0.78);
+        line-height: 1.55;
+        font-size: clamp(14px, 1.35vw, 17px);
+        margin: 0 0 12px;
+      }
+      p.warning strong {
+        color: #f0c8c8;
+      }
+      p.counts {
+        color: #888;
+        font-size: clamp(12px, 1.1vw, 14px);
+        margin: 14px 0 22px;
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        align-items: center;
+        margin-top: 8px;
+      }
+      button {
+        font-family: Georgia, serif;
+        cursor: pointer;
+      }
+      button:disabled {
+        cursor: default;
+      }
+      button.primary {
+        background: #86d37a;
+        color: #000;
+        border: 3px solid #000;
+        border-radius: 4px;
+        padding: clamp(10px, 1.6vmin, 20px) clamp(20px, 3.2vmin, 36px);
+        font-size: clamp(16px, 2.4vmin, 22px);
+        font-weight: bold;
+        letter-spacing: 0.1em;
+        min-width: min(320px, 84vw);
+        min-height: 52px;
+        text-shadow: 0 1px 2px rgba(255, 255, 255, 0.4);
+        box-shadow:
+          0 0 14px rgba(134, 211, 122, 0.5),
+          inset 0 0 18px rgba(0, 0, 0, 0.35);
+        transition:
+          background 0.18s ease,
+          box-shadow 0.18s ease;
+      }
+      button.primary:hover:not(:disabled) {
+        background: #a4e09a;
+        box-shadow:
+          0 0 22px rgba(164, 224, 154, 0.65),
+          inset 0 0 18px rgba(0, 0, 0, 0.35);
+      }
+      button.primary:disabled {
+        background: #4d6b48;
+        color: #1c1c1c;
+        box-shadow:
+          0 0 6px rgba(134, 211, 122, 0.18),
+          inset 0 0 12px rgba(0, 0, 0, 0.35);
+        text-shadow: none;
+      }
+      /* Intentionally less prominent: smaller, no fill, longer label so the
+         user has to read what they're opting out of. */
+      button.skip {
+        background: transparent;
+        color: #777;
+        border: 1px solid #3a3a3a;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: clamp(11px, 0.95vw, 12px);
+        line-height: 1.35;
+        max-width: min(520px, 92vw);
+        transition:
+          color 0.15s,
+          border-color 0.15s,
+          background 0.15s;
+      }
+      button.skip:hover:not(:disabled) {
+        color: #aaa;
+        border-color: #555;
+        background: #15100f;
+      }
+      button.skip:disabled {
+        color: #444;
+        border-color: #222;
+      }
+      .status {
+        margin-top: 14px;
+        font-size: clamp(12px, 1.1vw, 14px);
+        color: #8fc8a0;
+        min-height: 1.2em;
+      }
+      .status.err {
+        color: #ff9aa2;
+      }
+      code {
+        background: #1a1a1a;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 0.9em;
+      }
+      .err-detail {
+        max-width: min(640px, 92vw);
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 10px 12px;
+        color: #ff9aa2;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: clamp(11px, 1vw, 13px);
+        text-align: left;
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 14px auto 0;
+        display: none;
+      }
+      .err-detail.visible {
+        display: block;
+      }
+      a {
+        color: #ec83c3;
+      }
+      .hero {
+        max-width: 100%;
+        width: auto;
+        height: auto;
+        display: block;
+        margin: 0 auto clamp(14px, 2vw, 22px);
+        image-rendering: pixelated;
+        image-rendering: -moz-crisp-edges;
+        image-rendering: crisp-edges;
+      }
+      .hero[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="modal" id="modal">
+      <img
+        class="hero"
+        id="hero-img"
+        alt=""
+        hidden
+        data-src="/img/pictures/1a2c887c1143200f.png"
+      />
+      <h1>Not so fast!</h1>
+      <p>
+        You see this message because you have saves in multiple translations of
+        the game: they are going to get merged, as translation saves are no
+        longer kept separate.
+      </p>
+      <p class="warning">
+        Before we proceed,
+        <strong>download a backup of all your saves</strong> for safety. Each
+        save is a separate <code>.rpgsave</code> file in the archive and can be
+        re-imported one by one from the Save / Load screen.
+      </p>
+      <p class="counts" id="save-count">Scanning saves...</p>
+      <div class="actions">
+        <button class="primary" id="download-btn" disabled>
+          Download backup &amp; continue
+        </button>
+        <button class="skip" id="skip-btn" disabled>
+          I don't want to download the save backup, and I take the risk of
+          something going wrong
+        </button>
+      </div>
+      <p class="status" id="status"></p>
+      <pre class="err-detail" id="err-detail"></pre>
+    </div>
+
+    <script src="/js/libs/lz-string.js"></script>
+    <script>
+      "use strict";
+
+      // Site-wide lock check (see /lock.html). Same logic as index.html /
+      // loader.html: a complete lock pre-empts even the migration, since
+      // the user shouldn't be mutating their saves during an outage.
+      (function () {
+        try {
+          var lx = new XMLHttpRequest();
+          lx.open("GET", "/lock.json?_=" + Date.now(), false);
+          lx.send();
+          if (lx.status < 200 || lx.status >= 300) return;
+          var lock = JSON.parse(lx.responseText);
+          if (!lock || !lock.enabled) return;
+          var id = lock.id || "default";
+          if (lock.type === "partial") {
+            try {
+              if (localStorage.getItem("__lock_dismissed__:" + id)) return;
+            } catch (_) {}
+          }
+          location.replace(
+            "/lock.html?return=" +
+              encodeURIComponent(location.pathname + location.search),
+          );
+        } catch (_) {}
+      })();
+
+      // Standalone save-migration page. Lives at /migrate.html and is
+      // navigated to from index.html when the bootstrap detects any
+      // translation_*-prefixed save key in localStorage. Performs the
+      // merge here (away from the game's PIXI canvas / boot-splash /
+      // any LOADING overlays) and redirects back to /index.html on
+      // completion.
+
+      var SAVE_DB = "tcoaal-saves";
+      var SAVE_STORE = "saves";
+      var SAVE_DB_VERSION = 1;
+      var NEXT_URL = "/index.html";
+
+      // A "translation scope" is any LS/IDB prefix on a save key whose
+      // mod id starts with "translation_". This is the same convention
+      // mods.json uses; bypassing the mods.json fetch here means the
+      // page works even if mods.json is unavailable.
+      var TRANSLATION_PREFIX_RE = /^translation_/;
+      var SAVE_KIND_RE = /^RPG (File\d+(?:bak)?|Global|Config)$/;
+
+      // Load the hero image with an alpha-bbox crop applied on success.
+      // RPG Maker pictures usually carry a generous transparent margin; the
+      // crop tightens the visible content against our 280px hero box.
+      // Falls back to the uncropped image on failure (CORS taint, canvas
+      // throw, fully-transparent source). `<img onerror>` keeps the
+      // element hidden if the network 404s.
+      (function loadHeroWithAlphaCrop() {
+        var img = document.getElementById("hero-img");
+        if (!img) return;
+        var src = img.getAttribute("data-src");
+        if (!src) return;
+
+        function showWithSrc(s) {
+          img.onerror = function () {
+            img.hidden = true;
+          };
+          img.onload = null;
+          img.src = s;
+          img.hidden = false;
+        }
+
+        var probe = new Image();
+        probe.crossOrigin = "anonymous";
+        probe.onerror = function () {
+          img.hidden = true;
+        };
+        probe.onload = function () {
+          try {
+            var cropped = cropAlphaBBox(probe);
+            showWithSrc(cropped || src);
+          } catch (e) {
+            console.warn("[migrate] hero crop failed:", e);
+            showWithSrc(src);
+          }
+        };
+        probe.src = src;
+      })();
+
+      function cropAlphaBBox(image) {
+        var w = image.naturalWidth;
+        var h = image.naturalHeight;
+        if (!w || !h) return null;
+        var canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(image, 0, 0);
+        var data;
+        try {
+          data = ctx.getImageData(0, 0, w, h).data;
+        } catch (_) {
+          // Canvas tainted (cross-origin without proper headers). Return
+          // null so the caller falls back to the original src.
+          return null;
+        }
+        var minX = w,
+          minY = h,
+          maxX = -1,
+          maxY = -1;
+        for (var y = 0; y < h; y++) {
+          var rowOff = y * w * 4;
+          for (var x = 0; x < w; x++) {
+            if (data[rowOff + x * 4 + 3] > 0) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+          }
+        }
+        if (maxX < 0) return null; // fully transparent
+        var cw = maxX - minX + 1;
+        var ch = maxY - minY + 1;
+        if (cw === w && ch === h) return null; // nothing to crop
+        var out = document.createElement("canvas");
+        out.width = cw;
+        out.height = ch;
+        out
+          .getContext("2d")
+          .drawImage(canvas, minX, minY, cw, ch, 0, 0, cw, ch);
+        return out.toDataURL("image/png");
+      }
+
+      var $count = document.getElementById("save-count");
+      var $status = document.getElementById("status");
+      var $err = document.getElementById("err-detail");
+      var $download = document.getElementById("download-btn");
+      var $skip = document.getElementById("skip-btn");
+
+      function setStatus(msg, isErr) {
+        $status.textContent = msg || "";
+        $status.className = "status" + (isErr ? " err" : "");
+      }
+      function setErrDetail(text) {
+        if (text) {
+          $err.textContent = text;
+          $err.classList.add("visible");
+        } else {
+          $err.classList.remove("visible");
+        }
+      }
+
+      function goNext() {
+        // location.replace so the migrate page doesn't sit in history.
+        location.replace(NEXT_URL);
+      }
+
+      function openSaveDb() {
+        return new Promise(function (resolve) {
+          try {
+            var req = indexedDB.open(SAVE_DB, SAVE_DB_VERSION);
+            req.onupgradeneeded = function (e) {
+              try {
+                e.target.result.createObjectStore(SAVE_STORE);
+              } catch (_) {}
+            };
+            req.onsuccess = function () {
+              resolve(req.result);
+            };
+            req.onerror = function () {
+              resolve(null);
+            };
+            req.onblocked = function () {
+              resolve(null);
+            };
+          } catch (_) {
+            resolve(null);
+          }
+        });
+      }
+
+      function idbReadAll(db) {
+        return new Promise(function (resolve) {
+          if (!db) {
+            resolve({});
+            return;
+          }
+          var out = {};
+          try {
+            var tx = db.transaction(SAVE_STORE, "readonly");
+            var cur = tx.objectStore(SAVE_STORE).openCursor();
+            cur.onsuccess = function (e) {
+              var c = e.target.result;
+              if (c) {
+                out[c.key] = c.value;
+                c.continue();
+              } else {
+                resolve(out);
+              }
+            };
+            cur.onerror = function () {
+              resolve(out);
+            };
+          } catch (_) {
+            resolve(out);
+          }
+        });
+      }
+
+      function readLS() {
+        var out = {};
+        try {
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (!k) continue;
+            if (!isRelevantKey(k)) continue;
+            try {
+              out[k] = localStorage.getItem(k);
+            } catch (_) {}
+          }
+        } catch (_) {}
+        return out;
+      }
+
+      function splitKey(key) {
+        var colonIdx = key.indexOf(":");
+        if (colonIdx > 0) {
+          return {
+            scope: key.substring(0, colonIdx),
+            bare: key.substring(colonIdx + 1),
+          };
+        }
+        return { scope: "", bare: key };
+      }
+
+      function isRelevantKey(key) {
+        if (typeof key !== "string") return false;
+        var parts = splitKey(key);
+        if (parts.scope === "") return SAVE_KIND_RE.test(parts.bare);
+        // Only consider translation_*-prefixed keys: overhaul mod saves
+        // (e.g. TCOAAR:RPG File1) live in their own scope and must not be
+        // touched by this migration.
+        return (
+          TRANSLATION_PREFIX_RE.test(parts.scope) &&
+          SAVE_KIND_RE.test(parts.bare)
+        );
+      }
+
+      function parseGlobalArr(s) {
+        if (!s) return [];
+        try {
+          var json = LZString.decompressFromBase64(s);
+          if (!json) return [];
+          var parsed = JSON.parse(json);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (_) {
+          return [];
+        }
+      }
+      function encodeGlobalArr(arr) {
+        try {
+          return LZString.compressToBase64(JSON.stringify(arr));
+        } catch (_) {
+          return null;
+        }
+      }
+
+      // CRC32 + STORED-only zip builder. Mirrors the implementation in
+      // loader.html so the produced archive contains plain .rpgsave files
+      // that the Save / Load screen import accepts unchanged.
+      var _zipCrcTable = null;
+      function _zipCrc32(bytes) {
+        if (!_zipCrcTable) {
+          var t = new Uint32Array(256);
+          for (var n = 0; n < 256; n++) {
+            var c = n;
+            for (var k = 0; k < 8; k++) {
+              c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+            }
+            t[n] = c >>> 0;
+          }
+          _zipCrcTable = t;
+        }
+        var crc = 0xffffffff;
+        for (var i = 0; i < bytes.length; i++) {
+          crc = _zipCrcTable[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+        }
+        return (crc ^ 0xffffffff) >>> 0;
+      }
+
+      function _buildZipBlob(files) {
+        var encoder = new TextEncoder();
+        var local = [];
+        var cd = [];
+        var offset = 0;
+        for (var fi = 0; fi < files.length; fi++) {
+          var f = files[fi];
+          var nameBytes = encoder.encode(f.name);
+          var data = f.data;
+          var crc = _zipCrc32(data);
+          var size = data.length;
+          var lfh = new Uint8Array(30);
+          var lv = new DataView(lfh.buffer);
+          lv.setUint32(0, 0x04034b50, true);
+          lv.setUint16(4, 20, true);
+          lv.setUint16(6, 0x0800, true);
+          lv.setUint16(8, 0, true);
+          lv.setUint16(10, 0, true);
+          lv.setUint16(12, 0, true);
+          lv.setUint32(14, crc, true);
+          lv.setUint32(18, size, true);
+          lv.setUint32(22, size, true);
+          lv.setUint16(26, nameBytes.length, true);
+          lv.setUint16(28, 0, true);
+          local.push(lfh, nameBytes, data);
+          var cdr = new Uint8Array(46);
+          var cv = new DataView(cdr.buffer);
+          cv.setUint32(0, 0x02014b50, true);
+          cv.setUint16(4, 20, true);
+          cv.setUint16(6, 20, true);
+          cv.setUint16(8, 0x0800, true);
+          cv.setUint16(10, 0, true);
+          cv.setUint16(12, 0, true);
+          cv.setUint16(14, 0, true);
+          cv.setUint32(16, crc, true);
+          cv.setUint32(20, size, true);
+          cv.setUint32(24, size, true);
+          cv.setUint16(28, nameBytes.length, true);
+          cv.setUint16(30, 0, true);
+          cv.setUint16(32, 0, true);
+          cv.setUint16(34, 0, true);
+          cv.setUint16(36, 0, true);
+          cv.setUint32(38, 0, true);
+          cv.setUint32(42, offset, true);
+          cd.push(cdr, nameBytes);
+          offset += 30 + nameBytes.length + size;
+        }
+        var cdSize = 0;
+        for (var cdi = 0; cdi < cd.length; cdi++) cdSize += cd[cdi].length;
+        var eocd = new Uint8Array(22);
+        var ev = new DataView(eocd.buffer);
+        ev.setUint32(0, 0x06054b50, true);
+        ev.setUint16(4, 0, true);
+        ev.setUint16(6, 0, true);
+        ev.setUint16(8, files.length, true);
+        ev.setUint16(10, files.length, true);
+        ev.setUint32(12, cdSize, true);
+        ev.setUint32(16, offset, true);
+        ev.setUint16(20, 0, true);
+        var out = new Uint8Array(offset + cdSize + 22);
+        var p = 0;
+        for (var pi = 0; pi < local.length; pi++) {
+          out.set(local[pi], p);
+          p += local[pi].length;
+        }
+        for (var pj = 0; pj < cd.length; pj++) {
+          out.set(cd[pj], p);
+          p += cd[pj].length;
+        }
+        out.set(eocd, p);
+        return out;
+      }
+
+      function _saveKeyArchivePath(key) {
+        var colonIdx = key.indexOf(":");
+        var modDir = "";
+        var rest = key;
+        if (colonIdx > 0) {
+          modDir = key.substring(0, colonIdx).replace(/[/\\:]/g, "_") + "/";
+          rest = key.substring(colonIdx + 1);
+        }
+        var m = rest.match(/^RPG (File\d+|Global|Config)(bak)?$/);
+        if (m)
+          return modDir + m[1].toLowerCase() + (m[2] ? ".bak" : ".rpgsave");
+        return modDir + rest.replace(/[/\\:\s]/g, "_") + ".rpgsave";
+      }
+
+      function buildBackupZip(combined) {
+        var encoder = new TextEncoder();
+        var files = [];
+        var keys = Object.keys(combined).sort();
+        for (var i = 0; i < keys.length; i++) {
+          var k = keys[i];
+          var v = combined[k];
+          if (typeof v !== "string") continue;
+          files.push({ name: _saveKeyArchivePath(k), data: encoder.encode(v) });
+        }
+        files.push({
+          name: "manifest.json",
+          data: encoder.encode(
+            JSON.stringify(
+              {
+                type: "tcoaal-pre-merge-backup",
+                version: 1,
+                createdAt: new Date().toISOString(),
+                keys: keys,
+              },
+              null,
+              2,
+            ),
+          ),
+        });
+        return _buildZipBlob(files);
+      }
+
+      function triggerBackupDownload(zipBytes) {
+        var blob = new Blob([zipBytes], { type: "application/zip" });
+        var url = URL.createObjectURL(blob);
+        var d = new Date();
+        function pad(n) {
+          return n < 10 ? "0" + n : "" + n;
+        }
+        var ts =
+          d.getFullYear() +
+          "-" +
+          pad(d.getMonth() + 1) +
+          "-" +
+          pad(d.getDate()) +
+          "-" +
+          pad(d.getHours()) +
+          "h" +
+          pad(d.getMinutes());
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "TCOAAL-saves-pre-merge-" + ts + ".zip";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () {
+          URL.revokeObjectURL(url);
+        }, 30000);
+      }
+
+      // Build a plan from the combined LS+IDB view. Returns:
+      //   { hasTranslation, ordered, newGlobalEncoded, newConfig,
+      //     keysToDelete }
+      function buildMergePlan(combined, lsEntries, idbEntries, activeMod) {
+        // Discover scopes from the data, never from a registry: any
+        // colon-prefix key whose prefix starts with "translation_" is a
+        // translation scope.
+        var translationScopes = {};
+        Object.keys(combined).forEach(function (k) {
+          var s = splitKey(k).scope;
+          if (s && TRANSLATION_PREFIX_RE.test(s)) translationScopes[s] = true;
+        });
+        var translationIds = Object.keys(translationScopes).sort();
+
+        var hasTranslation = translationIds.length > 0;
+        if (!hasTranslation) {
+          return { hasTranslation: false };
+        }
+
+        // Per-scope buckets.
+        var scopes = { "": { files: {}, global: null, config: null } };
+        translationIds.forEach(function (t) {
+          scopes[t] = { files: {}, global: null, config: null };
+        });
+
+        Object.keys(combined).forEach(function (key) {
+          var parts = splitKey(key);
+          var bucket = scopes[parts.scope];
+          if (!bucket) return; // overhaul scope or unknown: skip
+          var value = combined[key];
+          var bare = parts.bare;
+          if (bare === "RPG Global") {
+            bucket.global = value;
+          } else if (bare === "RPG Config") {
+            bucket.config = value;
+          } else {
+            var m = bare.match(/^RPG File(\d+)(bak)?$/);
+            if (!m) return;
+            var fid = parseInt(m[1], 10);
+            var isBak = m[2] === "bak";
+            if (!bucket.files[fid]) bucket.files[fid] = {};
+            if (isBak) bucket.files[fid].bak = value;
+            else bucket.files[fid].value = value;
+          }
+        });
+
+        // Ordered list: base first (sorted by original file id), then each
+        // translation alphabetically (sorted by original file id within).
+        var scopeOrder = [""].concat(translationIds);
+        var ordered = [];
+        scopeOrder.forEach(function (scope) {
+          var sd = scopes[scope];
+          var globalArr = parseGlobalArr(sd.global);
+          var ids = Object.keys(sd.files)
+            .map(function (s) {
+              return parseInt(s, 10);
+            })
+            .sort(function (a, b) {
+              return a - b;
+            });
+          ids.forEach(function (oid) {
+            var f = sd.files[oid];
+            if (typeof f.value !== "string" || f.value.length === 0) return;
+            ordered.push({
+              scope: scope,
+              value: f.value,
+              bak: f.bak || null,
+              info: globalArr[oid] || null,
+            });
+          });
+        });
+
+        var newGlobal = [null];
+        for (var oi = 0; oi < ordered.length; oi++) {
+          newGlobal[oi + 1] = ordered[oi].info;
+        }
+        var newGlobalEncoded =
+          ordered.length > 0 ? encodeGlobalArr(newGlobal) : null;
+
+        var activeScopeForConfig =
+          activeMod && translationScopes[activeMod] ? activeMod : "";
+        var newConfig =
+          (scopes[activeScopeForConfig] &&
+            scopes[activeScopeForConfig].config) ||
+          scopes[""].config ||
+          null;
+        if (!newConfig) {
+          for (var ci = 0; ci < translationIds.length; ci++) {
+            if (scopes[translationIds[ci]].config) {
+              newConfig = scopes[translationIds[ci]].config;
+              break;
+            }
+          }
+        }
+
+        var allKeys = {};
+        Object.keys(lsEntries).forEach(function (k) {
+          allKeys[k] = true;
+        });
+        Object.keys(idbEntries).forEach(function (k) {
+          allKeys[k] = true;
+        });
+        return {
+          hasTranslation: true,
+          ordered: ordered,
+          newGlobalEncoded: newGlobalEncoded,
+          newConfig: newConfig,
+          keysToDelete: Object.keys(allKeys),
+        };
+      }
+
+      function commitMergeLS(plan) {
+        plan.keysToDelete.forEach(function (k) {
+          try {
+            localStorage.removeItem(k);
+          } catch (_) {}
+        });
+        if (plan.newGlobalEncoded) {
+          try {
+            localStorage.setItem("RPG Global", plan.newGlobalEncoded);
+          } catch (_) {}
+        }
+        if (plan.newConfig) {
+          try {
+            localStorage.setItem("RPG Config", plan.newConfig);
+          } catch (_) {}
+        }
+        for (var li = 0; li < plan.ordered.length; li++) {
+          var newId = li + 1;
+          var entry = plan.ordered[li];
+          try {
+            localStorage.setItem("RPG File" + newId, entry.value);
+          } catch (_) {}
+          if (entry.bak) {
+            try {
+              localStorage.setItem("RPG File" + newId + "bak", entry.bak);
+            } catch (_) {}
+          }
+        }
+      }
+
+      function commitMergeIDB(db, plan) {
+        return new Promise(function (resolve) {
+          if (!db) {
+            resolve();
+            return;
+          }
+          var tx;
+          try {
+            tx = db.transaction(SAVE_STORE, "readwrite");
+          } catch (_) {
+            resolve();
+            return;
+          }
+          var store = tx.objectStore(SAVE_STORE);
+          plan.keysToDelete.forEach(function (k) {
+            try {
+              store.delete(k);
+            } catch (_) {}
+          });
+          if (plan.newGlobalEncoded) {
+            try {
+              store.put(plan.newGlobalEncoded, "RPG Global");
+            } catch (_) {}
+          }
+          if (plan.newConfig) {
+            try {
+              store.put(plan.newConfig, "RPG Config");
+            } catch (_) {}
+          }
+          for (var ii = 0; ii < plan.ordered.length; ii++) {
+            var newId = ii + 1;
+            var entry = plan.ordered[ii];
+            try {
+              store.put(entry.value, "RPG File" + newId);
+            } catch (_) {}
+            if (entry.bak) {
+              try {
+                store.put(entry.bak, "RPG File" + newId + "bak");
+              } catch (_) {}
+            }
+          }
+          tx.oncomplete = function () {
+            resolve();
+          };
+          tx.onerror = function () {
+            resolve();
+          };
+          tx.onabort = function () {
+            resolve();
+          };
+        });
+      }
+
+      // Belt-and-braces sweep: after the merge, drop every remaining
+      // translation_<id>:* key from both LS and IDB, regardless of whether
+      // it looks like a save. The bootstrap in index.html re-fires migration
+      // on any surviving translation_*:RPG ... key, so even one orphan
+      // (e.g. a save-shape variant that slipped past SAVE_KIND_RE, or a
+      // legacy key written by an older lang-shim) re-triggers the popup
+      // on every boot. The merge step above already wrote the canonical
+      // unprefixed saves; this pass just removes the stragglers.
+      //
+      // Scoped to keys of the form "translation_<id>:<rest>" so we never
+      // touch unrelated keys that merely happen to begin with the literal
+      // prefix.
+      var SCOPED_TRANSLATION_KEY_RE = /^translation_[^:]+:/;
+
+      // A narrower pattern: translation-scoped RPG Global keys only.
+      // Translation mods share the base game's save scope (see
+      // lang-shim.js:getActiveSaveScope), so any translation_<id>:RPG Global
+      // entry is unreachable: the engine never reads it. They are safe to
+      // drop unconditionally as soon as the user commits to the migration,
+      // regardless of whether the file-merge step that follows succeeds. We
+      // keep this distinct from the broader post-merge sweep because the
+      // sweep also touches file saves (RPG File\d+(bak)?), which must NOT
+      // be dropped on a failed merge: they are still the user's only copy.
+      var TRANSLATION_GLOBAL_KEY_RE = /^translation_[^:]+:RPG Global$/;
+
+      function purgeTranslationKeysLS() {
+        var doomed = [];
+        try {
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (typeof k === "string" && SCOPED_TRANSLATION_KEY_RE.test(k)) {
+              doomed.push(k);
+            }
+          }
+        } catch (_) {}
+        for (var d = 0; d < doomed.length; d++) {
+          try {
+            localStorage.removeItem(doomed[d]);
+          } catch (_) {}
+        }
+      }
+
+      function purgeTranslationKeysIDB(db) {
+        return new Promise(function (resolve) {
+          if (!db) {
+            resolve();
+            return;
+          }
+          // Two-phase delete: first snapshot all keys via getAllKeys (a single
+          // read request, simpler than cursor iteration), then a fresh write
+          // transaction that issues one delete per matching key. Avoids the
+          // cursor-during-write edge cases (e.g. cursor advancing past a
+          // freshly-deleted entry) and is much easier to reason about.
+          var readTx;
+          try {
+            readTx = db.transaction(SAVE_STORE, "readonly");
+          } catch (_) {
+            resolve();
+            return;
+          }
+          var allKeysReq;
+          try {
+            allKeysReq = readTx.objectStore(SAVE_STORE).getAllKeys();
+          } catch (_) {
+            resolve();
+            return;
+          }
+          allKeysReq.onerror = function () {
+            resolve();
+          };
+          allKeysReq.onsuccess = function () {
+            var keys = allKeysReq.result || [];
+            var doomed = [];
+            for (var i = 0; i < keys.length; i++) {
+              var k = keys[i];
+              if (typeof k === "string" && SCOPED_TRANSLATION_KEY_RE.test(k)) {
+                doomed.push(k);
+              }
+            }
+            if (doomed.length === 0) {
+              resolve();
+              return;
+            }
+            var writeTx;
+            try {
+              writeTx = db.transaction(SAVE_STORE, "readwrite");
+            } catch (_) {
+              resolve();
+              return;
+            }
+            var store = writeTx.objectStore(SAVE_STORE);
+            for (var d = 0; d < doomed.length; d++) {
+              try {
+                store.delete(doomed[d]);
+              } catch (_) {}
+            }
+            writeTx.oncomplete = function () {
+              resolve();
+            };
+            writeTx.onerror = function () {
+              resolve();
+            };
+            writeTx.onabort = function () {
+              resolve();
+            };
+          };
+        });
+      }
+
+      function dropTranslationGlobalsLS() {
+        var doomed = [];
+        try {
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (typeof k === "string" && TRANSLATION_GLOBAL_KEY_RE.test(k)) {
+              doomed.push(k);
+            }
+          }
+        } catch (_) {}
+        for (var d = 0; d < doomed.length; d++) {
+          try {
+            localStorage.removeItem(doomed[d]);
+          } catch (_) {}
+        }
+      }
+
+      function dropTranslationGlobalsIDB(db) {
+        return new Promise(function (resolve) {
+          if (!db) {
+            resolve();
+            return;
+          }
+          var readTx;
+          try {
+            readTx = db.transaction(SAVE_STORE, "readonly");
+          } catch (_) {
+            resolve();
+            return;
+          }
+          var allKeysReq;
+          try {
+            allKeysReq = readTx.objectStore(SAVE_STORE).getAllKeys();
+          } catch (_) {
+            resolve();
+            return;
+          }
+          allKeysReq.onerror = function () {
+            resolve();
+          };
+          allKeysReq.onsuccess = function () {
+            var keys = allKeysReq.result || [];
+            var doomed = [];
+            for (var i = 0; i < keys.length; i++) {
+              var k = keys[i];
+              if (typeof k === "string" && TRANSLATION_GLOBAL_KEY_RE.test(k)) {
+                doomed.push(k);
+              }
+            }
+            if (doomed.length === 0) {
+              resolve();
+              return;
+            }
+            var writeTx;
+            try {
+              writeTx = db.transaction(SAVE_STORE, "readwrite");
+            } catch (_) {
+              resolve();
+              return;
+            }
+            var store = writeTx.objectStore(SAVE_STORE);
+            for (var d = 0; d < doomed.length; d++) {
+              try {
+                store.delete(doomed[d]);
+              } catch (_) {}
+            }
+            writeTx.oncomplete = function () {
+              resolve();
+            };
+            writeTx.onerror = function () {
+              resolve();
+            };
+            writeTx.onabort = function () {
+              resolve();
+            };
+          };
+        });
+      }
+
+      // Same one-shot SFX helper as lock.html: best-effort autoplay,
+      // falls back to first-pointer-down if the browser blocks. Silent on
+      // any failure (missing assets, codec issue, etc.).
+      var MIGRATE_SFX = "audio/se/e4b12af62524a5fe.ogg";
+      function playMigrateSfx() {
+        try {
+          var audio = new Audio();
+          audio.preload = "auto";
+          audio.src = "/" + MIGRATE_SFX;
+          var armed = false;
+          function arm() {
+            if (armed) return;
+            armed = true;
+            window.addEventListener(
+              "pointerdown",
+              function once() {
+                window.removeEventListener("pointerdown", once, true);
+                audio.play().catch(function () {});
+              },
+              { once: true, capture: true },
+            );
+          }
+          var p = audio.play();
+          if (p && typeof p.catch === "function") {
+            p.catch(function () {
+              arm();
+            });
+          }
+        } catch (_) {}
+      }
+
+      var _state = null; // { plan, combined, db }
+
+      async function initialize() {
+        playMigrateSfx();
+        if (typeof LZString === "undefined") {
+          setStatus(
+            "LZString failed to load from /js/libs/lz-string.js. Visit /index.html once to import game files, then return here.",
+            true,
+          );
+          return;
+        }
+
+        var db = await openSaveDb();
+        var lsEntries = readLS();
+        var idbEntries = {};
+        try {
+          var all = await idbReadAll(db);
+          Object.keys(all).forEach(function (k) {
+            if (isRelevantKey(k)) idbEntries[k] = all[k];
+          });
+        } catch (_) {}
+
+        // Combined view: LS wins on conflict.
+        var combined = {};
+        Object.keys(idbEntries).forEach(function (k) {
+          combined[k] = idbEntries[k];
+        });
+        Object.keys(lsEntries).forEach(function (k) {
+          combined[k] = lsEntries[k];
+        });
+
+        var activeMod = null;
+        try {
+          activeMod = localStorage.getItem("_activeMod") || null;
+        } catch (_) {}
+
+        var plan = buildMergePlan(combined, lsEntries, idbEntries, activeMod);
+        if (!plan.hasTranslation) {
+          $count.textContent =
+            "No translation-prefixed saves found. Redirecting...";
+          setTimeout(goNext, 600);
+          return;
+        }
+
+        _state = { plan: plan, combined: combined, db: db };
+
+        $count.textContent =
+          plan.ordered.length +
+          " save file" +
+          (plan.ordered.length === 1 ? "" : "s") +
+          " will be merged and backed up.";
+        $download.disabled = false;
+        $skip.disabled = false;
+      }
+
+      async function runMerge(skipDownload) {
+        if (!_state) return;
+        $download.disabled = true;
+        $skip.disabled = true;
+
+        if (!skipDownload) {
+          $download.textContent = "Downloading...";
+          setStatus("Building backup archive...");
+          try {
+            var zip = buildBackupZip(_state.combined);
+            triggerBackupDownload(zip);
+            setStatus("Backup downloaded. Merging saves...");
+          } catch (e) {
+            console.error("[migrate] backup build failed:", e);
+            setStatus(
+              "Couldn't build the backup archive. Refresh the page to try again.",
+              true,
+            );
+            setErrDetail(String((e && e.stack) || e));
+            $download.disabled = false;
+            $skip.disabled = false;
+            $download.textContent = "Download backup & continue";
+            return;
+          }
+        } else {
+          setStatus("Merging saves (no backup taken)...");
+        }
+
+        $download.textContent = "Merging...";
+
+        // Drop translation_<id>:RPG Global from LS and IDB *before* the
+        // file merge runs. Translation mods are transparent for saves
+        // (lang-shim's getActiveSaveScope returns null for them), so these
+        // globals are dead data the engine never reads: safe to remove
+        // regardless of whether the merge succeeds. Doing it here means
+        // an early bail-out below still leaves the user with no orphan
+        // translation globals around to re-trigger migration next boot.
+        // We do NOT touch RPG File\d+ keys here: they remain the user's
+        // only copy of those saves until commitMerge* writes the merged
+        // versions to the base scope.
+        try {
+          dropTranslationGlobalsLS();
+          await dropTranslationGlobalsIDB(_state.db);
+        } catch (e) {
+          console.warn("[migrate] translation-global drop failed:", e);
+        }
+
+        try {
+          commitMergeLS(_state.plan);
+          await commitMergeIDB(_state.db, _state.plan);
+        } catch (e) {
+          console.error("[migrate] merge failed:", e);
+          setStatus(
+            "Merge failed. Refresh the page to try again: original saves are still in place.",
+            true,
+          );
+          setErrDetail(String((e && e.stack) || e));
+          return;
+        }
+
+        // Final sweep: drop any lingering translation_<id>:* keys from
+        // LS/IDB. The targeted merge above relies on SAVE_KIND_RE; this
+        // catches stragglers (bak-only files with no primary, legacy
+        // shapes from older builds) so the bootstrap in index.html
+        // doesn't re-trigger migration on the next visit.
+        try {
+          purgeTranslationKeysLS();
+          await purgeTranslationKeysIDB(_state.db);
+        } catch (e) {
+          console.warn("[migrate] post-merge sweep failed:", e);
+        }
+
+        // Mark migration complete. The bootstrap in index.html consults
+        // this flag: with it set, any straggler translation_<id>:* key
+        // is dropped silently instead of re-triggering this page. Without
+        // it, the user would loop back here on every boot if even one
+        // orphan survived. `localStorage.clear()` (in the loader's reset
+        // / re-import flows) wipes the flag too, so a fresh import that
+        // legitimately reintroduces translation_*: keys can still migrate.
+        try {
+          localStorage.setItem("_migration_translation_done", "1");
+        } catch (_) {}
+
+        // Pre-empt browser-shim's modAwareKey fallback: the DRM payload
+        // runs before lang-shim's persistSaveScope on the next boot, and
+        // without an _activeSaveScope mirror it would prefix saves with
+        // translation_<lang>: again from _activeMod. Translation mods share
+        // the base scope, so "" is the correct value. Overhaul mods write
+        // their own _activeSaveScope on every boot already, so leave any
+        // existing non-empty mirror alone.
+        try {
+          var _am = localStorage.getItem("_activeMod") || "";
+          if (_am === "" || _am.indexOf("translation_") === 0) {
+            localStorage.setItem("_activeSaveScope", "");
+          }
+        } catch (_) {}
+
+        setStatus("Done. Loading game...");
+        // Tiny delay so the user sees the status flip before navigation.
+        setTimeout(goNext, 250);
+      }
+
+      $download.addEventListener("click", function () {
+        runMerge(false);
+      });
+      $skip.addEventListener("click", function () {
+        // Make the user double-check: confirm() is browser-native, can't
+        // be styled out of the way, and matches the gravity of the choice.
+        if (
+          !window.confirm(
+            "Skip the backup download?\n\nIf the merge goes wrong you won't be able to recover the original per-translation saves. Continue without a backup?",
+          )
+        ) {
+          return;
+        }
+        runMerge(true);
+      });
+
+      initialize();
+    </script>
+  </body>
+</html>

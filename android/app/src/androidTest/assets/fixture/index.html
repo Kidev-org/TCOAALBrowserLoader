@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>sw-fixture</title>
+  </head>
+  <body>
+    <script>
+      // Reports a single result string back to the instrumented test through the
+      // AndroidProbe bridge. Exercises the exact capabilities the real app needs:
+      //   1. service worker registers + takes control,
+      //   2. it INTERCEPTS a fetch (the asset-decryption mechanism),
+      //   3. IndexedDB writes succeed (save persistence).
+      (function () {
+        function done(t) {
+          try {
+            AndroidProbe.result(t);
+          } catch (e) {}
+        }
+
+        function checkIdb() {
+          return new Promise(function (resolve) {
+            try {
+              var rq = indexedDB.open("persist-test", 1);
+              rq.onupgradeneeded = function (e) {
+                try {
+                  e.target.result.createObjectStore("kv");
+                } catch (_) {}
+              };
+              rq.onsuccess = function () {
+                try {
+                  var db = rq.result;
+                  var tx = db.transaction("kv", "readwrite");
+                  tx.objectStore("kv").put("v", "k");
+                  tx.oncomplete = function () {
+                    resolve(true);
+                  };
+                  tx.onerror = function () {
+                    resolve(false);
+                  };
+                } catch (_) {
+                  resolve(false);
+                }
+              };
+              rq.onerror = function () {
+                resolve(false);
+              };
+            } catch (_) {
+              resolve(false);
+            }
+          });
+        }
+
+        (async function () {
+          try {
+            if (!("serviceWorker" in navigator)) return done("NO_SW_API");
+            await navigator.serviceWorker.register("/sw.js");
+            await navigator.serviceWorker.ready;
+            // Wait (up to ~5s) for the worker to claim this client.
+            for (var i = 0; i < 50 && !navigator.serviceWorker.controller; i++) {
+              await new Promise(function (r) {
+                setTimeout(r, 100);
+              });
+            }
+            if (!navigator.serviceWorker.controller) return done("NO_CONTROLLER");
+
+            var res = await fetch("/probe");
+            var txt = await res.text();
+            var idbOk = await checkIdb();
+            done("FETCH=" + txt + ";IDB=" + (idbOk ? "OK" : "FAIL"));
+          } catch (e) {
+            done("ERR:" + (e && e.message ? e.message : e));
+          }
+        })();
+      })();
+    </script>
+  </body>
+</html>

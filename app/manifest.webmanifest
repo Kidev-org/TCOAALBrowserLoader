@@ -1,0 +1,46 @@
+{
+  "name": "TCOAAL Browser Player",
+  "short_name": "TCOAAL",
+  "description": "Play The Coffin of Andy and Leyley (TCOAAL) and its fan mods directly in your browser. Free, no install, works on desktop and mobile.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#ec83c3",
+  "lang": "en",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "256x256 128x128 64x64 48x48 32x32 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/img/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/img/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/img/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/img/tcoaal-steam-header.jpg",
+      "sizes": "460x215",
+      "type": "image/jpeg",
+      "label": "The Coffin of Andy and Leyley title art"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for the installer window: core, file dialogs, shell.",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:default", "shell:default"]
+}

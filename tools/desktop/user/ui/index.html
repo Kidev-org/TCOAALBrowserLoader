@@ -1,0 +1,1319 @@
+<!doctype html>
+<!--
+  TCOAAL Browser Player
+  Copyright (C) 2026 kidev
+
+  This program is free software: you can redistribute it and/or modify it
+  under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or (at your
+  option) any later version. This program is distributed in the hope that it
+  will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+  of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+  General Public License for more details: <https://www.gnu.org/licenses/>.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mod Installer</title>
+    <style>
+      /* ---------------------------------------------------------------
+         The shell: everything the app owns rather than the theme. It is
+         deliberately tiny (a loading state and an error bar) because the
+         screen belongs to the mod's theme, which replaces #root wholesale.
+         --------------------------------------------------------------- */
+      :root {
+        --bg: #14100f;
+        --fg: #efe6e0;
+        --muted: #a2938c;
+        --accent: #a3232b;
+        --line: #2e2624;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          15px/1.5 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        overflow-x: hidden;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        gap: 14px;
+        background: var(--bg);
+        z-index: 10;
+        transition: opacity 0.25s ease;
+      }
+      #boot.gone {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #boot .inner {
+        text-align: center;
+      }
+      #boot img {
+        width: 72px;
+        height: 72px;
+        border-radius: 12px;
+        object-fit: cover;
+      }
+      #boot p {
+        margin: 14px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      #boot .dots::after {
+        content: "";
+        animation: dots 1.2s steps(4, end) infinite;
+      }
+      @keyframes dots {
+        0% {
+          content: "";
+        }
+        25% {
+          content: ".";
+        }
+        50% {
+          content: "..";
+        }
+        75% {
+          content: "...";
+        }
+      }
+      /*
+       * The busy bar and the music toggle belong to the shell, not to the
+       * theme: they have to work over a page whose markup the app never saw.
+       * Both are fixed, id-scoped and sit under the boot cover and the error
+       * bar, so a theme's own `body`/`button` rules cannot move or restyle
+       * them and they never take part in the theme's layout.
+       */
+      #busy {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        z-index: 15;
+        overflow: hidden;
+        background: rgba(127, 127, 127, 0.25);
+      }
+      #busy[hidden] {
+        display: none;
+      }
+      #busy span {
+        display: block;
+        height: 100%;
+        width: 100%;
+        background: var(--busy-color, #ffffff);
+        transform-origin: left center;
+        transform: scaleX(0);
+        transition: transform 0.18s linear;
+      }
+      /* Until the first progress line there is no fraction to show, only the
+         fact that something is running. */
+      #busy.waiting span {
+        width: 34%;
+        transform: none;
+        transition: none;
+        animation: busy-slide 1.15s ease-in-out infinite;
+      }
+      @keyframes busy-slide {
+        0% {
+          margin-left: -34%;
+        }
+        100% {
+          margin-left: 100%;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #busy.waiting span {
+          width: 100%;
+          opacity: 0.5;
+          animation: none;
+        }
+      }
+      /*
+       * What the bar cannot say. A 3px line tells the player that something is
+       * happening; it cannot tell them WHAT, and the first seconds of an
+       * install (opening a package that can be hundreds of megabytes) look
+       * exactly like a button that did nothing. This carries the phase the
+       * loader is reporting, in the app's own colours, over any theme.
+       */
+      #busy-note {
+        position: fixed;
+        top: 13px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 16;
+        max-width: min(560px, calc(100vw - 90px));
+        padding: 7px 14px;
+        border: 1px solid rgba(127, 127, 127, 0.35);
+        border-radius: 999px;
+        background: rgba(12, 10, 10, 0.88);
+        color: #f2ece8;
+        font-size: 12.5px;
+        line-height: 1.35;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+        pointer-events: none;
+        opacity: 1;
+        transition: opacity 0.2s ease;
+      }
+      #busy-note[hidden] {
+        display: none;
+      }
+      #busy-note.fading {
+        opacity: 0;
+      }
+      #music {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        z-index: 15;
+        display: flex;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(127, 127, 127, 0.4);
+        border-radius: 50%;
+        background: rgba(20, 16, 15, 0.55);
+        color: inherit;
+        opacity: 0.55;
+        cursor: pointer;
+        transition: opacity 0.18s ease;
+      }
+      #music:hover {
+        opacity: 1;
+      }
+      #music[hidden] {
+        display: none;
+      }
+      #music svg {
+        display: block;
+        width: 15px;
+        height: 15px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.7;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      #music .off {
+        display: none;
+      }
+      #music.muted .on {
+        display: none;
+      }
+      #music.muted .off {
+        display: block;
+      }
+      #errbar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 20;
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 12px 14px;
+        background: #2b1517;
+        border-top: 1px solid var(--accent);
+        color: #ffd9dc;
+        font-size: 13px;
+        white-space: pre-wrap;
+      }
+      #errbar[hidden] {
+        display: none;
+      }
+      #errbar button {
+        margin-left: auto;
+        flex: none;
+        background: none;
+        border: 1px solid #6b3034;
+        color: inherit;
+        border-radius: 4px;
+        padding: 3px 9px;
+        font: inherit;
+        cursor: pointer;
+      }
+
+    </style>
+
+    <!--
+      The built-in theme. This is the SAME screen app/create.html shows in its
+      live preview under the "Slate" preset (and the same markup ids, so the
+      API calls line up), because a mod that ships no theme of its own must not
+      land the player somewhere that looks like a different program.
+
+      It is a stylesheet of its own, and not part of the shell's, for one
+      reason: a mod's theme is mounted into THIS document and its markup uses
+      these same ids and element names. Every rule below would then apply to
+      the mod's page too, winning wherever the theme did not happen to set the
+      same property - a `main` stretched to 100vh, an `align-items: center` the
+      theme never asked for - and the screen the modder previewed would not be
+      the screen the player gets. mountTheme() deletes this element outright.
+    -->
+    <style id="builtin-theme">
+      main {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 28px 20px;
+      }
+      .card {
+        width: min(460px, 100%);
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        text-align: center;
+        background: #171211;
+      }
+      #icon {
+        width: 96px;
+        height: 96px;
+        border-radius: 12px;
+        object-fit: cover;
+      }
+      #icon[hidden] {
+        display: none;
+      }
+      h1 {
+        margin: 14px 0 2px;
+        font-size: 22px;
+      }
+      #version {
+        margin: 0 0 16px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      #status {
+        min-height: 3em;
+        margin: 0 0 18px;
+        color: var(--muted);
+        white-space: pre-wrap;
+      }
+      #actions {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      button {
+        flex: 1 1 120px;
+        padding: 10px 14px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #1e1917;
+        color: var(--fg);
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      button[hidden] {
+        display: none;
+      }
+      progress {
+        width: 100%;
+        margin-top: 16px;
+        accent-color: var(--accent);
+      }
+      progress[hidden] {
+        display: none;
+      }
+      .where {
+        margin-top: 18px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+        font-size: 12px;
+        color: var(--muted);
+        word-break: break-all;
+      }
+      .where a {
+        color: var(--muted);
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      #status a {
+        color: inherit;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      .others {
+        margin-top: 16px;
+        text-align: left;
+        font-size: 13px;
+      }
+      .others[hidden] {
+        display: none;
+      }
+      .others h2 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      .others label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 0;
+      }
+      .others .name {
+        flex: 1;
+      }
+      .others .drop {
+        background: none;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 2px 7px;
+        flex: none;
+        font-size: 12px;
+      }
+      .banner {
+        margin-bottom: 16px;
+        padding: 10px 12px;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        font-size: 13px;
+        text-align: left;
+        color: #ffd9dc;
+      }
+      .banner[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot">
+      <div class="inner">
+        <img id="boot-icon" alt="" hidden />
+        <p id="boot-text" class="dots">Starting</p>
+      </div>
+    </div>
+
+    <div id="busy" hidden><span></span></div>
+    <div id="busy-note" hidden role="status" aria-live="polite"></div>
+
+    <button
+      type="button"
+      id="music"
+      hidden
+      aria-pressed="true"
+      aria-label="Music"
+      title="Music"
+    >
+      <svg class="on" viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M4 8h3l4-3v10l-4-3H4z" />
+        <path d="M14 7.5a3.5 3.5 0 0 1 0 5" />
+        <path d="M16.3 5.2a6.5 6.5 0 0 1 0 9.6" />
+      </svg>
+      <svg class="off" viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M4 8h3l4-3v10l-4-3H4z" />
+        <path d="M14 8l4 4M18 8l-4 4" />
+      </svg>
+    </button>
+
+    <div id="errbar" hidden>
+      <span id="errtext"></span>
+      <button type="button" id="errclose">Close</button>
+    </div>
+
+    <div id="root">
+      <main>
+        <div class="card">
+          <div class="banner" id="banner" hidden></div>
+          <img id="icon" alt="" hidden />
+          <h1 id="name">Mod</h1>
+          <p id="version"></p>
+          <p id="status">Looking for your game...</p>
+          <div id="actions">
+            <button id="install" class="primary" hidden>Install</button>
+            <button id="launch" class="primary" hidden>Play</button>
+            <button id="uninstall" hidden>Uninstall</button>
+            <button id="pick" hidden>Choose the game folder</button>
+            <button id="open-mod" hidden>Open a mod file</button>
+          </div>
+          <progress id="progress" max="100" value="0" hidden></progress>
+          <div class="others" id="others">
+            <h2>Also installed</h2>
+            <div id="others-list"></div>
+          </div>
+          <p class="where" id="where"></p>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      "use strict";
+
+      /*
+       * Everything below lives inside one function on purpose.
+       *
+       * A mod's theme is arbitrary top-level script, and the global LEXICAL
+       * scope is shared with it: a `const $` here and the `var $` that every
+       * theme app/create.html generates both want the same global name, which
+       * is a SyntaxError: the theme's whole script fails to parse and the
+       * player gets a page that renders and does nothing. So the shell keeps
+       * its names to itself and reaches the theme only through the window
+       * properties the API is documented as.
+       */
+      (function () {
+        /*
+         * The loader API.
+         *
+         * These globals are the entire contract between a mod's theme and this
+         * app: the same names app/create.html documents under its theme editor
+         * and stubs in its live preview, so a theme that worked in the preview
+         * works here without a single change. Everything else in this file is
+         * either the shell around them or the built-in theme used when a mod
+         * ships none.
+         */
+
+        const invoke = window.__TAURI__.core.invoke;
+        const listen = window.__TAURI__.event.listen;
+
+        const State = {
+          app: null, // { version, mod, theme }: what this binary carries
+          game: null, // mod-loader --status for the detected game
+          progress: null, // the theme's OnProgress callback
+        };
+
+        function showError(msg) {
+          document.getElementById("errtext").textContent = String(msg || "");
+          document.getElementById("errbar").hidden = !msg;
+        }
+        document.getElementById("errclose").onclick = () => showError("");
+
+        /*
+         * The busy bar.
+         *
+         * A theme can register OnProgress and draw its own bar, and the
+         * presets do, but nothing guarantees a theme has one, and the parts of
+         * a job that report no fraction (opening a package, hashing a build,
+         * handing the game to Proton) are exactly the parts where the window
+         * would otherwise look frozen. So the shell shows this for the whole
+         * time a call is in flight, waiting until a progress line gives it a
+         * fraction to fill. Calls nest, hence the count.
+         */
+        let busyDepth = 0;
+        let busyHide = 0;
+        const busyBar = () => document.getElementById("busy");
+        const busyNote = () => document.getElementById("busy-note");
+
+        /** The phase line, in the app's own chrome, over whatever the theme is. */
+        function busySay(text) {
+          const el = busyNote();
+          el.textContent = text;
+          el.classList.remove("fading");
+          el.hidden = false;
+        }
+
+        function busyStart() {
+          if (++busyDepth !== 1) return;
+          busySay("Working...");
+          const el = busyBar();
+          clearTimeout(busyHide);
+          // Wear the theme's accent where it declares one, so the bar reads as
+          // part of the page it is drawn over.
+          const accent = getComputedStyle(document.documentElement)
+            .getPropertyValue("--accent")
+            .trim();
+          el.style.setProperty(
+            "--busy-color",
+            accent || getComputedStyle(document.body).color,
+          );
+          // Cleared, not set to scaleX(0): an inline transform outranks the
+          // .waiting rule, and a sliver scaled to nothing is an invisible
+          // "working" state.
+          el.firstElementChild.style.transform = "";
+          el.classList.add("waiting");
+          el.hidden = false;
+        }
+
+        function busyAt(p) {
+          if (!busyDepth || !p) return;
+          // A line with a total of one is a phase marker ("Applying <mod>"),
+          // not a measurement: the loader sends those around work it cannot
+          // count. Filling to 0/1 would read as stuck, so those keep the bar
+          // moving instead.
+          const measured = !!p.total && p.total > 1;
+          const frac = measured
+            ? Math.max(0, Math.min(1, p.done / p.total))
+            : 0;
+          if (p.message || measured) {
+            busySay(
+              (p.message || "Working...") +
+                (measured ? "  " + Math.round(frac * 100) + "%" : ""),
+            );
+          }
+          if (!measured) return;
+          const el = busyBar();
+          el.classList.remove("waiting");
+          el.firstElementChild.style.transform = "scaleX(" + frac + ")";
+        }
+
+        function busyEnd() {
+          if (busyDepth > 0) busyDepth--;
+          if (busyDepth) return;
+          const el = busyBar();
+          el.classList.remove("waiting");
+          el.firstElementChild.style.transform = "scaleX(1)";
+          busyNote().classList.add("fading");
+          // Let the fill reach the end before the bar goes, so a job that
+          // finishes quickly still reads as finished rather than cancelled.
+          busyHide = setTimeout(() => {
+            el.hidden = true;
+            const note = busyNote();
+            note.hidden = true;
+            note.classList.remove("fading");
+            // A theme's own bar, put on screen by its OnProgress callback and
+            // in most themes never taken off again: the presets show it on the
+            // first line and have nothing to hide it with, so it stays on the
+            // page as a stray rule long after the work is done. The work is the
+            // app's to track, so switching it off is too.
+            const theirs = document.querySelector("#root #progress");
+            if (theirs) theirs.hidden = true;
+          }, 320);
+        }
+
+        /*
+         * The commands that write. Two of these running at once means two
+         * copies of the loader writing the same addons folder, which no theme
+         * is required to prevent: the built-in one disables its buttons for the
+         * duration, a mod's theme may simply call InstallSteam() again on the
+         * second click. So the shell holds the lock, and the second call is
+         * refused with something the player can read rather than left to race.
+         */
+        const WRITES = [
+          "install_mod",
+          "uninstall_mod",
+          "enable_mod",
+          "set_load_order",
+          "apply_update",
+          "restore_original",
+          "launch_game",
+        ];
+        let writing = false;
+
+        /*
+         * Every API call goes through here, so a failure has exactly one
+         * behaviour: the message is shown to the player by the app itself, and
+         * the promise still rejects. A theme that wraps its calls in try/catch
+         * can react; a theme that does not still leaves the player looking at
+         * the reason rather than at a button that silently did nothing.
+         */
+        async function call(name, args) {
+          const writes = WRITES.indexOf(name) !== -1;
+          if (writes && writing) {
+            const msg = "Still working on the last one. One moment.";
+            showError(msg);
+            throw new Error(msg);
+          }
+          showError("");
+          if (writes) writing = true;
+          busyStart();
+          try {
+            return await invoke(name, args || {});
+          } catch (e) {
+            const msg = (e && e.message) || String(e);
+            showError(msg);
+            throw new Error(msg);
+          } finally {
+            if (writes) writing = false;
+            busyEnd();
+          }
+        }
+
+        function gameRoot() {
+          if (!State.game || !State.game.root) {
+            throw new Error("No game folder has been chosen yet.");
+          }
+          return State.game.root;
+        }
+
+        /** The mod this installer is for, whether or not it is installed yet. */
+        function selfId() {
+          return State.app && State.app.mod ? State.app.mod.id : null;
+        }
+
+        async function refreshGame() {
+          if (!State.game || !State.game.root) return State.game;
+          State.game = await call("game_status", { root: State.game.root });
+          return State.game;
+        }
+
+        // the documented API
+
+        window.FindGame = async function () {
+          State.game = await call("detect_game");
+          return State.game;
+        };
+
+        // Kept under its documented name: themes written against the preview
+        // call FindSteam() and read .gamePath.
+        window.FindSteam = async function () {
+          const g = await window.FindGame();
+          return g
+            ? Object.assign({ gamePath: g.root, buildid: g.version }, g)
+            : null;
+        };
+
+        window.PickGame = async function () {
+          const g = await call("choose_game");
+          if (g) State.game = g;
+          return g;
+        };
+
+        window.IsLoaderInstalled = async function () {
+          return !!(State.game && State.game.mods && State.game.mods.length);
+        };
+
+        // There is no separate loader to install any more: a mod is installed
+        // beside the game and played from there. Installing this mod IS setting
+        // the loader up, so the documented call does that.
+        window.InstallLoader = async function () {
+          return window.InstallSteam();
+        };
+
+        window.ListMods = async function () {
+          const installed = (State.game && State.game.mods) || [];
+          const out = installed.map((m) =>
+            Object.assign({}, m, { isSelf: m.id === selfId() }),
+          );
+          // The carried mod, before it exists on disk anywhere: a theme asks for
+          // its own name and icon on the very first frame.
+          const me = State.app && State.app.mod;
+          if (me && !out.some((m) => m.isSelf)) {
+            out.unshift({
+              id: me.id,
+              name: me.name,
+              author: me.author,
+              version: me.version,
+              description: me.description,
+              icon: me.icon,
+              enabled: false,
+              installed: false,
+              isSelf: true,
+            });
+          }
+          return out;
+        };
+
+        window.InstallSteam = async function (opts) {
+          const res = await call("install_mod", {
+            root: gameRoot(),
+            file: (opts && opts.file) || null,
+            force: !!(opts && opts.force),
+          });
+          await refreshGame();
+          return res;
+        };
+
+        window.UninstallSteam = async function (id) {
+          const res = await call("uninstall_mod", {
+            root: gameRoot(),
+            id: id || selfId(),
+          });
+          await refreshGame();
+          return res;
+        };
+
+        window.EnableMod = async function (id, on) {
+          const res = await call("enable_mod", {
+            root: gameRoot(),
+            id: id,
+            on: on !== false,
+          });
+          await refreshGame();
+          return res;
+        };
+
+        window.SetLoadOrder = async function (ids) {
+          const res = await call("set_load_order", {
+            root: gameRoot(),
+            ids: ids,
+          });
+          await refreshGame();
+          return res;
+        };
+
+        window.LaunchGame = async function () {
+          // The game brings its own sound, so this screen goes quiet the
+          // moment it is handed over. The player's on/off choice is untouched:
+          // coming back to the installer starts it again.
+          if (MusicState.el) MusicState.el.pause();
+          try {
+            return await call("launch_game", { root: gameRoot() });
+          } catch (e) {
+            musicTry(); // it never started; the screen is still theirs
+            throw e;
+          }
+        };
+
+        window.CheckUpdate = async function (id) {
+          const res = await call("check_update", {
+            root: gameRoot(),
+            id: id || null,
+          });
+          const list = (res && res.updates) || [];
+          if (id) return list.find((u) => u.id === id && u.newer) || null;
+          return list.filter((u) => u.newer);
+        };
+
+        window.ApplyUpdate = async function (id) {
+          const res = await call("apply_update", {
+            root: gameRoot(),
+            id: id || selfId(),
+          });
+          await refreshGame();
+          return res;
+        };
+
+        window.OpenGameFolder = async function () {
+          return call("open_folder", { path: gameRoot() });
+        };
+
+        /** Undo an install made by the older, in-place installer. */
+        window.RestoreOriginal = async function () {
+          const res = await call("restore_original", { root: gameRoot() });
+          await refreshGame();
+          return res;
+        };
+
+        window.PickModFile = async function () {
+          return call("choose_mod_file");
+        };
+
+        window.OnProgress = function (cb) {
+          State.progress = typeof cb === "function" ? cb : null;
+        };
+
+        listen("mod-progress", (ev) => {
+          busyAt(ev.payload);
+          if (State.progress) {
+            try {
+              State.progress(ev.payload);
+            } catch (e) {
+              /* a theme's own callback must not take the app down */
+            }
+          }
+        });
+
+        /*
+         * Background music.
+         *
+         * A mod that ships `music.<ext>` in its theme folder gets it played on
+         * this screen, looping, until the game starts. It is the modder's
+         * track, so the shell does not pick one and there is none by default.
+         *
+         * Two things are not negotiable for audio that starts on its own: the
+         * player can silence it, and the choice is remembered. WebKit will
+         * also refuse to start audible playback before the player has touched
+         * the window, which is not an error to report but a wait: the first
+         * click or key press starts it.
+         */
+        const MUSIC_PREF = "tcoaal.music";
+        const MusicState = { el: null, wanted: true };
+
+        function musicButton() {
+          return document.getElementById("music");
+        }
+
+        function musicPaint() {
+          const b = musicButton();
+          b.hidden = !MusicState.el;
+          b.classList.toggle("muted", !MusicState.wanted);
+          b.setAttribute("aria-pressed", String(MusicState.wanted));
+          b.title = MusicState.wanted ? "Music on" : "Music off";
+        }
+
+        function musicTry() {
+          if (!MusicState.el || !MusicState.wanted) return;
+          const p = MusicState.el.play();
+          if (p && typeof p.catch === "function") {
+            p.catch(() => {
+              // Blocked until the window has been interacted with. One shot,
+              // on whichever comes first.
+              const go = () => {
+                document.removeEventListener("pointerdown", go, true);
+                document.removeEventListener("keydown", go, true);
+                musicTry();
+              };
+              document.addEventListener("pointerdown", go, true);
+              document.addEventListener("keydown", go, true);
+            });
+          }
+        }
+
+        /** Called once with the theme's files, whether or not they hold music. */
+        function musicMount(files) {
+          const rel = Object.keys(files || {}).filter((n) =>
+            /^music\.(mp3|ogg|m4a|wav|flac|opus|webm)$/i.test(n),
+          )[0];
+          if (MusicState.el) {
+            MusicState.el.pause();
+            MusicState.el = null;
+          }
+          if (rel) {
+            try {
+              MusicState.wanted = localStorage.getItem(MUSIC_PREF) !== "off";
+            } catch (e) {
+              MusicState.wanted = true; // storage blocked: default to on
+            }
+            const audio = new Audio(dataUrl(files, rel));
+            audio.loop = true;
+            audio.volume = 0.45;
+            MusicState.el = audio;
+            musicTry();
+          }
+          musicPaint();
+        }
+
+        function musicSet(on) {
+          MusicState.wanted = !!on;
+          try {
+            localStorage.setItem(MUSIC_PREF, MusicState.wanted ? "on" : "off");
+          } catch (e) {
+            /* the choice still holds for this run */
+          }
+          if (!MusicState.el) return musicPaint();
+          if (MusicState.wanted) musicTry();
+          else MusicState.el.pause();
+          musicPaint();
+        }
+
+        musicButton().onclick = () => musicSet(!MusicState.wanted);
+
+        window.HasMusic = function () {
+          return !!MusicState.el;
+        };
+        window.PlayMusic = function () {
+          musicSet(true);
+        };
+        window.StopMusic = function () {
+          musicSet(false);
+        };
+        window.ToggleMusic = function () {
+          musicSet(!MusicState.wanted);
+        };
+
+        // mounting a mod's own theme
+
+        const MIME = {
+          css: "text/css",
+          js: "text/javascript",
+          png: "image/png",
+          jpg: "image/jpeg",
+          jpeg: "image/jpeg",
+          gif: "image/gif",
+          webp: "image/webp",
+          svg: "image/svg+xml",
+          woff: "font/woff",
+          woff2: "font/woff2",
+          ttf: "font/ttf",
+          otf: "font/otf",
+          mp3: "audio/mpeg",
+          ogg: "audio/ogg",
+        };
+
+        function mimeOf(rel) {
+          return (
+            MIME[rel.split(".").pop().toLowerCase()] ||
+            "application/octet-stream"
+          );
+        }
+
+        function textOf(files, rel) {
+          return atob(files[rel] || "");
+        }
+
+        function dataUrl(files, rel) {
+          return "data:" + mimeOf(rel) + ";base64," + files[rel];
+        }
+
+        /** A same-folder reference, or null for anything absolute or remote. */
+        function localRel(src) {
+          if (!src) return null;
+          if (/^([a-z][a-z0-9+.-]*:)?\/\//i.test(src)) return null;
+          if (src.charAt(0) === "/" || src.indexOf("data:") === 0) return null;
+          return src.replace(/^\.\//, "");
+        }
+
+        /*
+         * Mount the theme the mod carries. Same transformation app/create.html's
+         * preview does (its buildPreviewSrcdoc): local stylesheets and scripts
+         * are inlined and everything else the page points at becomes a data:
+         * URL, so what the modder previewed is what the player sees.
+         */
+        function mountTheme(files) {
+          const doc = new DOMParser().parseFromString(
+            textOf(files, "index.html"),
+            "text/html",
+          );
+
+          doc.querySelectorAll("link[rel=stylesheet][href]").forEach((el) => {
+            const rel = localRel(el.getAttribute("href"));
+            if (rel === null || files[rel] === undefined) return;
+            const style = doc.createElement("style");
+            style.textContent = textOf(files, rel);
+            el.replaceWith(style);
+          });
+
+          doc.querySelectorAll("[src]").forEach((el) => {
+            if (el.tagName === "SCRIPT") return; // handled below, in order
+            const rel = localRel(el.getAttribute("src"));
+            if (rel === null || files[rel] === undefined) return;
+            el.setAttribute("src", dataUrl(files, rel));
+          });
+
+          // url(...) inside the theme's own CSS.
+          doc.querySelectorAll("style").forEach((el) => {
+            el.textContent = el.textContent.replace(
+              /url\((['"]?)([^'")]+)\1\)/g,
+              function (whole, q, ref) {
+                const rel = localRel(ref);
+                if (rel === null || files[rel] === undefined) return whole;
+                return "url(" + dataUrl(files, rel) + ")";
+              },
+            );
+          });
+
+          document.title = doc.title || document.title;
+          // The built-in theme's stylesheet targets the very ids and elements
+          // this markup uses, so it has to go before the mod's page is in the
+          // document: what the modder previewed is what the player sees, and
+          // that is only true if nothing of ours is still styling their page.
+          const builtin = document.getElementById("builtin-theme");
+          if (builtin) builtin.remove();
+          document.head
+            .querySelectorAll("style[data-theme], link[data-theme]")
+            .forEach((el) => el.remove());
+          doc.head
+            .querySelectorAll("style, link[rel=stylesheet]")
+            .forEach((el) => {
+              const clone = el.cloneNode(true);
+              clone.setAttribute("data-theme", "");
+              document.head.appendChild(clone);
+            });
+
+          // Scripts do not run when they arrive through innerHTML, so the body
+          // is set first and every script is then re-created in document order.
+          const scripts = Array.from(doc.querySelectorAll("script"));
+          scripts.forEach((el) => el.remove());
+          document.getElementById("root").innerHTML = doc.body.innerHTML;
+
+          for (const el of scripts) {
+            const rel = localRel(el.getAttribute("src"));
+            const code =
+              rel !== null && files[rel] !== undefined
+                ? textOf(files, rel)
+                : el.textContent;
+            if (!code) continue;
+            const tag = document.createElement("script");
+            tag.textContent = code;
+            document.body.appendChild(tag);
+          }
+        }
+
+        // the built-in theme
+
+        const $ = (id) => document.getElementById(id);
+
+        function setStatus(text) {
+          $("status").textContent = text;
+        }
+
+        /*
+         * The same line, with the folder picker offered inside it. Where the
+         * game will be installed is the one thing a player might want to
+         * change at exactly this moment, and the line that says the mod is
+         * ready is where they are already looking.
+         */
+        function setStatusChangeFolder(text, tail) {
+          const el = $("status");
+          el.textContent = text + " ";
+          const a = document.createElement("a");
+          a.textContent = "(change folder)";
+          a.onclick = () =>
+            guard(async () => {
+              if (await window.PickGame()) await paint();
+            });
+          el.appendChild(a);
+          if (tail) el.append("\n" + tail);
+        }
+
+        /** Say what is about to happen before the first progress line lands. */
+        function startWorking(text) {
+          setStatus(text);
+          const bar = $("progress");
+          bar.hidden = false;
+          bar.removeAttribute("value"); // indeterminate until a fraction lands
+        }
+
+        function show(id, on) {
+          $(id).hidden = !on;
+        }
+
+        function meOf(mods) {
+          return mods.filter((m) => m.isSelf)[0] || null;
+        }
+
+        async function paint() {
+          const mods = await window.ListMods();
+          const me = meOf(mods);
+          const game = State.game;
+
+          $("name").textContent = me ? me.name : "TCOAAL Mod Loader";
+          $("version").textContent = me && me.version ? "v" + me.version : "";
+          if (me && me.icon) $("icon").src = me.icon;
+          show("icon", !!(me && me.icon));
+
+          if (!game) {
+            setStatus(
+              "I could not find your copy of The Coffin of Andy and Leyley.\n" +
+                "Pick the folder it is installed in and I will remember it.",
+            );
+            show("install", false);
+            show("launch", false);
+            show("uninstall", false);
+            show("pick", true);
+            show("open-mod", !me);
+            show("others", false);
+            $("where").textContent = "";
+            return;
+          }
+
+          show("pick", false);
+          show("banner", false);
+          if (game.legacy) {
+            $("banner").textContent =
+              "This game still has a mod installed the old way, which changed the " +
+              "game's own files. Put them back before installing anything here.";
+            show("banner", true);
+          }
+
+          const installed = !!(me && me.installed);
+          show("install", !!me && !installed && !game.legacy);
+          show("uninstall", installed);
+          show("launch", (game.mods || []).some((m) => m.enabled) || !me);
+          show("open-mod", !me);
+
+          if (!me) {
+            setStatus(
+              (game.mods || []).length
+                ? "Ready to play."
+                : "No mod is installed on this copy yet. Open a .tcoaalmod file to add one.",
+            );
+          } else if (installed) {
+            setStatus(
+              "Installed and ready to play.\nYour game files were not touched.",
+            );
+          } else if (game.legacy) {
+            setStatus("Restore the game's original files first.");
+          } else {
+            setStatusChangeFolder("Ready to install.", me.description);
+          }
+
+          // Everything else that is installed here, so a player can see and
+          // turn off mods this installer did not bring.
+          const others = (game.mods || []).filter(
+            (m) => m.id !== (me && me.id),
+          );
+          show("others", others.length > 0);
+          const list = $("others-list");
+          list.innerHTML = "";
+          for (const m of others) {
+            const label = document.createElement("label");
+            const box = document.createElement("input");
+            box.type = "checkbox";
+            box.checked = m.enabled;
+            box.onchange = () =>
+              guard(async () => {
+                await window.EnableMod(m.id, box.checked);
+                await paint();
+              });
+            const name = document.createElement("span");
+            name.className = "name";
+            name.textContent = m.name + (m.version ? " v" + m.version : "");
+            const drop = document.createElement("button");
+            drop.className = "drop";
+            drop.type = "button";
+            drop.textContent = "Remove";
+            drop.onclick = () =>
+              guard(async () => {
+                await window.UninstallSteam(m.id);
+                await paint();
+              });
+            label.append(box, name, drop);
+            list.appendChild(label);
+          }
+
+          const where = $("where");
+          where.textContent = "Game: " + game.root;
+          // The status line already offers the picker while an install is
+          // pending; one line offering it twice is one too many.
+          if (installed || !me) {
+            where.append("  ");
+            const change = document.createElement("a");
+            change.textContent = "change";
+            change.onclick = () =>
+              guard(async () => {
+                if (await window.PickGame()) await paint();
+              });
+            where.appendChild(change);
+          }
+        }
+
+        let _busy = false;
+        /** One button at a time, and a failure never leaves them all disabled. */
+        async function guard(fn) {
+          if (_busy) return;
+          _busy = true;
+          const buttons = Array.from(document.querySelectorAll("button"));
+          buttons.forEach((b) => (b.disabled = true));
+          try {
+            await fn();
+          } catch (e) {
+            // call() already showed the reason. Repaint so the line above the
+            // buttons stops claiming the job is still under way: a screen that
+            // reads "Getting the game ready..." under an error message is the
+            // one thing worse than the error.
+            try {
+              await paint();
+            } catch (e2) {
+              /* nothing left to repaint from */
+            }
+          } finally {
+            _busy = false;
+            buttons.forEach((b) => (b.disabled = false));
+            $("progress").hidden = true;
+          }
+        }
+
+        function bindBuiltInTheme() {
+          window.OnProgress(function (p) {
+            const bar = $("progress");
+            bar.hidden = false;
+            // A total of one is a phase marker, not a measurement: filling to
+            // 0% would read as a job that is stuck at the start.
+            if (p.total > 1) bar.value = Math.round((p.done * 100) / p.total);
+            else bar.removeAttribute("value");
+            if (p.message) setStatus(p.message);
+          });
+
+          $("install").onclick = () =>
+            guard(async () => {
+              startWorking("Installing...");
+              await window.InstallSteam();
+              await paint();
+            });
+          $("uninstall").onclick = () =>
+            guard(async () => {
+              startWorking("Removing...");
+              await window.UninstallSteam();
+              await paint();
+            });
+          $("launch").onclick = () =>
+            guard(async () => {
+              startWorking("Getting the game ready...");
+              await window.LaunchGame();
+              setStatus("The game is starting.");
+            });
+          $("pick").onclick = () =>
+            guard(async () => {
+              if (await window.PickGame()) await paint();
+            });
+          $("open-mod").onclick = () =>
+            guard(async () => {
+              const file = await window.PickModFile();
+              if (!file) return;
+              startWorking("Installing...");
+              await window.InstallSteam({ file: file });
+              await paint();
+            });
+        }
+
+        // boot
+
+        (async function boot() {
+          try {
+            State.app = await invoke("app_info");
+          } catch (e) {
+            State.app = { version: "", mod: null, theme: null };
+            showError((e && e.message) || String(e));
+          }
+
+          const me = State.app.mod;
+          if (me) {
+            $("boot-text").textContent = "Starting " + (me.name || "");
+            if (me.icon) {
+              $("boot-icon").src = me.icon;
+              $("boot-icon").hidden = false;
+            }
+          }
+
+          try {
+            State.game = await invoke("detect_game");
+          } catch (e) {
+            State.game = null;
+            showError((e && e.message) || String(e));
+          }
+
+          musicMount(State.app.theme);
+
+          if (State.app.theme && State.app.theme["index.html"]) {
+            try {
+              mountTheme(State.app.theme);
+            } catch (e) {
+              showError(
+                "This mod's own screen could not be shown: " + e.message,
+              );
+              bindBuiltInTheme();
+              await paint();
+            }
+          } else {
+            bindBuiltInTheme();
+            await paint();
+          }
+
+          const boot = $("boot");
+          boot.classList.add("gone");
+          setTimeout(() => (boot.hidden = true), 300);
+        })();
+      })();
+    </script>
+  </body>
+</html>

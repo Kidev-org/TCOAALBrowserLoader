@@ -1,0 +1,37 @@
+# TCOAAL Browser Player: desktop apps workspace
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# One app lives here:
+#   user/   install and play mods without writing to the game itself
+#           (tools/mod-loader.js: an addons/ folder beside www/ plus a
+#           hardlink profile). It is also the stub app/create.html stamps a
+#           .tcoaalmod into, so a modder can hand a player one
+#           double-clickable installer; see the payload lookup in
+#           user/src-tauri/src/main.rs and .github/workflows/deploy-stubs.yml.
+#
+# The creator app (project extraction, mod authoring) is NOT here: it drives
+# extract-project.js, which stays out of this repo on purpose. It lives in the
+# local-only .modding/tools/desktop/creator and depends on this workspace's
+# core crate by path.
+#
+# The app bundles a Node runtime (placed under src-tauri/runtime/ by CI) and
+# the repo's tools/mod-loader.js, tools/mod-apply.js and app/js/libs, then
+# shells out to Node to run them. No tool logic is reimplemented in Rust.
+
+[workspace]
+resolver = "2"
+members = ["core", "user/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+authors = ["kidev"]
+
+[workspace.dependencies]
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

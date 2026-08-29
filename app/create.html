@@ -1,0 +1,4632 @@
+<!doctype html>
+<!--
+  TCOAAL Browser Player
+  Copyright (C) 2026 kidev
+
+  This program is free software: you can redistribute it and/or modify it
+  under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or (at your
+  option) any later version. This program is distributed in the hope that it
+  will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+  of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+  General Public License for more details: <https://www.gnu.org/licenses/>.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Unlisted tool page: not linked from loader.html, not in robots.txt /
+         sitemap.xml (that indexing is Task 12's job). noindex here keeps a
+         crawler that finds the URL some other way from listing it anyway. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Package your mod | TCOAAL Browser Player</title>
+
+    <script>
+      (function () {
+        var l = document.createElement("link");
+        l.rel = "icon";
+        l.id = "favicon";
+        l.type = "image/x-icon";
+        l.href = "/favicon.ico?t=" + Date.now();
+        document.head.appendChild(l);
+      })();
+    </script>
+
+    <!-- CodeMirror's own stylesheet plus this project's dark theme for it.
+         Vendored under app/js/libs/ and listed in sw.js's APP_SHELL, so the
+         editors below look right offline. -->
+    <link rel="stylesheet" href="js/libs/codemirror.css" />
+
+    <style>
+      /* loader.html's own :root block, so this page shares its palette. */
+      :root {
+        --green: #86d37a;
+        --purple: #ec83c3;
+        --blue: #596891;
+        --yellow: #eeea72;
+        --grey: #5b5b5b;
+        --default: #d3d0c0;
+        --red: #955456;
+        --white: #ffffff;
+        --black: #000000;
+        --bg-color: #1a1a1a;
+        --bg-color-darker: #121212;
+        --bg-color-section: #2a2a2a;
+        --bg-color-section-lighter: #3a3a3a;
+        --txt-color: var(--white);
+        --accent-color: #555555;
+        --accent-color-light: #666666;
+        --play-glow-color: var(--purple);
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* As in notice.html: the art paints on the root before JS runs, and a
+         fixed .bg copy under the scrolling content keeps it still. */
+      html {
+        scrollbar-width: none;
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg.webp") top center / cover no-repeat,
+          var(--black);
+      }
+      html.android-app {
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg-android.webp") top center / cover no-repeat,
+          var(--black);
+      }
+      html::-webkit-scrollbar,
+      body::-webkit-scrollbar {
+        display: none;
+      }
+
+      body {
+        background: transparent;
+        color: var(--default);
+        font-family: "Georgia", serif;
+        min-height: 100vh;
+        line-height: 1.6;
+      }
+
+      .bg {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        z-index: 0;
+        pointer-events: none;
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg.webp") top center / cover no-repeat,
+          var(--black);
+      }
+      body.android-app .bg {
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg-android.webp") top center / cover no-repeat,
+          var(--black);
+      }
+
+      /* notice.html's .back-link, so both tool pages return to the loader
+         through the same control in the same place. */
+      .back-link {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        z-index: 10;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: rgba(15, 15, 15, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.9);
+        text-decoration: none;
+        font-size: 0.85em;
+        transition: all 0.3s ease;
+      }
+      .back-link:hover {
+        color: var(--white);
+        background: rgba(236, 131, 195, 0.35);
+        border-color: rgba(236, 131, 195, 0.6);
+        transform: translateY(-1px);
+      }
+      .back-link svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex: 0 0 auto;
+      }
+
+      .wrap {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        max-width: 900px;
+        margin: 0 auto;
+        padding: clamp(40px, 6vmin, 72px) clamp(16px, 3vmin, 32px)
+          clamp(56px, 8vmin, 96px);
+      }
+
+      .wrap > h1 {
+        color: var(--white);
+        font-size: clamp(22px, 3vmin, 32px);
+        font-weight: normal;
+        letter-spacing: 0.04em;
+        margin: 0 0 clamp(14px, 2vmin, 24px);
+      }
+
+      .page-status {
+        min-height: 1.2em;
+        margin: 0 0 clamp(14px, 2vmin, 20px);
+        color: rgba(255, 255, 255, 0.75);
+      }
+      .page-status:empty {
+        display: none;
+      }
+      .page-status.err {
+        color: #ff9aa2;
+      }
+      .page-status.ok {
+        color: var(--green);
+      }
+
+      /* ----- panes ----------------------------------------------------- */
+      /* This page's own classes, styled to match the rest: notice.html's
+         .doc card treatment, loader.html's .action-btn family. */
+      .pane {
+        padding: clamp(18px, 2.6vmin, 30px) clamp(18px, 2.8vmin, 34px);
+        background: rgba(20, 20, 20, 0.88);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        box-shadow:
+          0 6px 24px rgba(0, 0, 0, 0.55),
+          inset 0 0 24px rgba(0, 0, 0, 0.35);
+        margin-bottom: clamp(16px, 2.4vmin, 28px);
+      }
+      .pane[hidden] {
+        display: none;
+      }
+      .pane h2 {
+        color: var(--purple);
+        font-weight: normal;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-size: clamp(15px, 1.9vmin, 20px);
+        margin: 0 0 14px;
+      }
+      .pane .hint {
+        color: rgba(255, 255, 255, 0.7);
+        margin: 0 0 16px;
+      }
+      .pane .hint code {
+        color: rgba(255, 255, 255, 0.9);
+        font-family: "Consolas", "Menlo", monospace;
+        font-size: 0.95em;
+      }
+      .pane .note {
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 0.9em;
+        margin-top: 10px;
+      }
+      .pane .note[hidden] {
+        display: none;
+      }
+
+      /* Outlined rather than loader.html's flat grey fill: a dozen small
+         filled controls on one panel read as browser chrome, and the filled
+         .primary stays the only solid thing on screen, hence always the next
+         step. --btn-accent lets a variant swap the hover colour. */
+      .btn {
+        --btn-accent: var(--purple);
+        position: relative;
+        display: inline-block;
+        background:
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.08),
+            rgba(255, 255, 255, 0.015)
+          ),
+          rgba(0, 0, 0, 0.32);
+        color: rgba(255, 255, 255, 0.88);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 3px;
+        padding: 11px 22px;
+        cursor: pointer;
+        font-family: "Georgia", serif;
+        font-size: 13px;
+        font-weight: bold;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        text-decoration: none;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.07),
+          0 2px 8px rgba(0, 0, 0, 0.45);
+        transition:
+          border-color 0.18s,
+          box-shadow 0.18s,
+          color 0.18s,
+          transform 0.08s;
+      }
+      .btn[hidden] {
+        display: none;
+      }
+      .btn:hover:not(:disabled) {
+        border-color: var(--btn-accent);
+        color: var(--white);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.1),
+          0 0 14px -3px var(--btn-accent),
+          0 2px 10px rgba(0, 0, 0, 0.5);
+      }
+      .btn:active:not(:disabled) {
+        transform: translateY(1px);
+      }
+      .btn:focus-visible {
+        outline: 2px solid var(--btn-accent);
+        outline-offset: 2px;
+      }
+      .btn:disabled {
+        opacity: 0.32;
+        cursor: not-allowed;
+      }
+      .btn.primary {
+        background: linear-gradient(180deg, #f4b0da, var(--purple));
+        border-color: #f7c4e3;
+        color: #1b1013;
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.22);
+      }
+      .btn.primary:hover:not(:disabled) {
+        background: linear-gradient(180deg, #ffc7e6, #f094cf);
+        color: #1b1013;
+        box-shadow:
+          0 0 20px -3px var(--purple),
+          0 3px 12px rgba(0, 0, 0, 0.5);
+      }
+      .btn.danger {
+        --btn-accent: #c8767a;
+      }
+      .btn.small {
+        font-size: 11px;
+        letter-spacing: 0.07em;
+        padding: 7px 14px;
+      }
+
+      /* ----- base pairs -------------------------------------------------- */
+      .pair-row {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+        background: rgba(0, 0, 0, 0.25);
+      }
+      /* Two labelled steps rather than one flex row: the select and the
+         import do unrelated jobs, and side by side the import read as an
+         afterthought instead of the other half of the pair. */
+      .pair-row-fields {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        gap: 0 22px;
+        align-items: start;
+      }
+      .pair-step-label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 0.78em;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.5);
+      }
+      .pair-step-label .step-num {
+        display: inline-block;
+        width: 17px;
+        height: 17px;
+        margin-right: 7px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 50%;
+        font-size: 10px;
+        line-height: 15px;
+        text-align: center;
+        vertical-align: 1px;
+      }
+      .pair-divider {
+        align-self: stretch;
+        width: 1px;
+        background: rgba(255, 255, 255, 0.1);
+      }
+      /* Dashed and full width, like the drop target it stands in for, so it
+         cannot be mistaken for a control that belongs to the select. */
+      .pair-row .import-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        width: 100%;
+        padding: 13px 16px;
+        border-style: dashed;
+        border-color: rgba(255, 255, 255, 0.28);
+      }
+      .pair-row .import-btn svg {
+        width: 15px;
+        height: 15px;
+        flex: none;
+      }
+      .pair-row .import-btn.filled {
+        border-style: solid;
+        border-color: rgba(134, 211, 122, 0.55);
+      }
+      .pair-row select {
+        width: 100%;
+        font-family: "Georgia", serif;
+        font-size: 14px;
+        background: var(--bg-color-section);
+        color: var(--txt-color);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 4px;
+        padding: 12px 10px;
+        min-width: 0;
+      }
+      .pair-row .folder-name {
+        display: block;
+        margin-top: 8px;
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 0.85em;
+        text-align: center;
+        overflow-wrap: anywhere;
+      }
+      .pair-row .folder-name:empty {
+        display: none;
+      }
+      .pair-row .row-status {
+        margin-top: 8px;
+        font-size: 0.88em;
+        min-height: 1.2em;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .pair-row .row-status:empty {
+        display: none;
+      }
+      .pair-row .row-status.ok {
+        color: var(--green);
+      }
+      .pair-row .row-status.err {
+        color: #ff9aa2;
+      }
+      .pair-row .remove-row {
+        margin-top: 10px;
+      }
+
+      #add-pair {
+        margin-top: 4px;
+      }
+
+      /* ----- metadata form ---------------------------------------------- */
+      .field {
+        margin-bottom: 16px;
+      }
+      .field label,
+      .field legend {
+        display: block;
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 0.92em;
+        letter-spacing: 0.02em;
+        margin-bottom: 6px;
+      }
+      .field input[type="text"],
+      .field textarea {
+        width: 100%;
+        font-family: "Georgia", serif;
+        font-size: 14px;
+        background: var(--bg-color-section);
+        color: var(--txt-color);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 4px;
+        padding: 8px 10px;
+      }
+      .field input[type="text"]:focus,
+      .field textarea:focus {
+        outline: none;
+        border-color: var(--purple);
+      }
+      .field textarea {
+        resize: vertical;
+        min-height: 4.5em;
+        font-size: 14px;
+      }
+      .field input[type="file"] {
+        color: rgba(255, 255, 255, 0.55);
+        font-family: "Georgia", serif;
+        font-size: 0.85em;
+      }
+      .field input[type="file"]::file-selector-button {
+        margin-right: 12px;
+        padding: 7px 14px;
+        background:
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.08),
+            rgba(255, 255, 255, 0.015)
+          ),
+          rgba(0, 0, 0, 0.32);
+        color: rgba(255, 255, 255, 0.88);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 3px;
+        font-family: "Georgia", serif;
+        font-size: 11px;
+        font-weight: bold;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition:
+          border-color 0.18s,
+          color 0.18s;
+      }
+      .field input[type="file"]::file-selector-button:hover {
+        border-color: var(--purple);
+        color: var(--white);
+      }
+      /* The required marker. Most of this form is optional, so the
+         exception is what gets marked. */
+      .req {
+        color: #ff9aa2;
+        margin-left: 3px;
+      }
+      .field-hint {
+        margin-top: 6px;
+        font-size: 0.85em;
+        color: rgba(255, 255, 255, 0.55);
+      }
+      .field-hint code {
+        color: rgba(255, 255, 255, 0.85);
+        font-family: "Consolas", "Menlo", monospace;
+        font-size: 0.95em;
+        overflow-wrap: anywhere;
+      }
+      .field-error {
+        margin-top: 6px;
+        font-size: 0.85em;
+        color: #ff9aa2;
+      }
+      .field-error:empty {
+        display: none;
+      }
+      .field-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+      .field-row .field {
+        flex: 1 1 240px;
+        min-width: 0;
+      }
+      fieldset.field {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        padding: 12px 14px;
+        margin: 0 0 16px;
+      }
+      fieldset.field label {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        font-size: 1em;
+        color: var(--txt-color);
+        margin-bottom: 6px;
+        cursor: pointer;
+      }
+      fieldset.field input[type="radio"] {
+        margin: 0;
+        accent-color: var(--purple);
+      }
+      .icon-preview {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 10px;
+        font-size: 0.85em;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .icon-preview[hidden] {
+        display: none;
+      }
+      .icon-preview .icon-preview-text {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .icon-preview img {
+        width: 64px;
+        height: 64px;
+        object-fit: contain;
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 6px;
+      }
+
+      /* ----- customize: presets, preview, code editors ------------------- */
+      .preset-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 10px;
+      }
+      .preset-card {
+        display: block;
+        text-align: left;
+        padding: 12px 14px 13px;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 6px;
+        color: var(--default);
+        font-family: "Georgia", serif;
+        cursor: pointer;
+        transition:
+          border-color 0.18s,
+          background 0.18s,
+          box-shadow 0.18s;
+      }
+      .preset-card:hover {
+        border-color: rgba(236, 131, 195, 0.5);
+      }
+      .preset-card:focus-visible {
+        outline: 2px solid var(--purple);
+        outline-offset: 2px;
+      }
+      .preset-card[aria-pressed="true"] {
+        border-color: var(--purple);
+        background: rgba(236, 131, 195, 0.1);
+        box-shadow: 0 0 14px -4px var(--purple);
+      }
+      /* Three bands of the preset's own palette: enough to tell the looks
+         apart at a glance without rendering a live iframe for each. */
+      .preset-swatch {
+        display: flex;
+        height: 32px;
+        margin-bottom: 9px;
+        border-radius: 3px;
+        overflow: hidden;
+        border: 1px solid rgba(0, 0, 0, 0.55);
+      }
+      .preset-swatch span {
+        flex: 1;
+      }
+      .preset-swatch.blank {
+        border-style: dashed;
+        border-color: rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .preset-card b {
+        display: block;
+        color: var(--white);
+        font-weight: normal;
+        letter-spacing: 0.04em;
+      }
+      .preset-card small {
+        display: block;
+        margin-top: 2px;
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 0.8em;
+        line-height: 1.45;
+      }
+
+      /* A scale model of the installer window, not a panel with a height of
+         its own: the iframe is laid out at the size tauri.conf.json opens
+         (PREVIEW_WINDOW_W/H) and scaled to the pane. Any other height lies in
+         one direction or the other. */
+      #theme-preview-wrap {
+        margin-top: 16px;
+        position: relative;
+        overflow: hidden;
+        aspect-ratio: 820 / 640;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 6px;
+        background: var(--bg-color-darker);
+      }
+      #theme-preview {
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 820px;
+        height: 640px;
+        border: 0;
+        transform-origin: top left;
+        transform: scale(var(--preview-scale, 1));
+      }
+      .customize-foot {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        margin-top: 14px;
+      }
+      .link-toggle {
+        margin-right: auto;
+        padding: 0;
+        background: none;
+        border: none;
+        color: var(--purple);
+        font-family: "Georgia", serif;
+        font-size: 0.92em;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .link-toggle[hidden] {
+        display: none;
+      }
+      .link-toggle:hover {
+        color: #f7c4e3;
+      }
+      .link-toggle:focus-visible {
+        outline: 2px solid var(--purple);
+        outline-offset: 3px;
+      }
+      .link-toggle svg {
+        width: 11px;
+        height: 11px;
+        transition: transform 0.2s;
+      }
+      .link-toggle[aria-expanded="true"] svg {
+        transform: rotate(90deg);
+      }
+
+      #advanced {
+        margin-top: 18px;
+      }
+      #advanced[hidden] {
+        display: none;
+      }
+      .editor-tabs {
+        display: flex;
+        gap: 2px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+      }
+      .editor-tab {
+        padding: 7px 15px;
+        background: none;
+        border: 1px solid transparent;
+        border-bottom: none;
+        border-radius: 4px 4px 0 0;
+        color: rgba(255, 255, 255, 0.5);
+        font-family: "Consolas", "Menlo", monospace;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .editor-tab:hover {
+        color: var(--white);
+      }
+      .editor-tab[aria-selected="true"] {
+        margin-bottom: -1px;
+        background: var(--bg-color-darker);
+        border-color: rgba(255, 255, 255, 0.14);
+        color: var(--white);
+      }
+      /* The <textarea> is CodeMirror's source element and the fallback if
+         that script fails to load, so it keeps styles of its own. */
+      .editor-host {
+        height: 320px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 0 4px 4px 4px;
+        overflow: hidden;
+      }
+      .editor-host:focus-within {
+        border-color: var(--purple);
+      }
+      .editor-host .CodeMirror {
+        height: 100%;
+        font-family: "Consolas", "Menlo", monospace;
+        font-size: 12.5px;
+        line-height: 1.55;
+      }
+      .editor-host.plain {
+        border: none;
+        border-radius: 0;
+        overflow: visible;
+        height: auto;
+      }
+
+      #editor {
+        display: block;
+        width: 100%;
+        height: 320px;
+        padding: 12px 14px;
+        background: var(--bg-color-darker);
+        color: #d8e0d6;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 0 4px 4px 4px;
+        font-family: "Consolas", "Menlo", monospace;
+        font-size: 12.5px;
+        line-height: 1.55;
+        tab-size: 2;
+        resize: vertical;
+        white-space: pre;
+      }
+      #editor:focus {
+        outline: none;
+        border-color: var(--purple);
+      }
+      .api-ref {
+        margin-top: 16px;
+      }
+      .api-ref h3 {
+        margin-bottom: 8px;
+        color: rgba(255, 255, 255, 0.5);
+        font-weight: normal;
+        font-size: 0.82em;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+      .api-ref ul {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+        gap: 3px 22px;
+        list-style: none;
+        font-size: 0.85em;
+        line-height: 1.5;
+      }
+      .api-ref code {
+        color: var(--green);
+        font-family: "Consolas", "Menlo", monospace;
+      }
+      .api-ref li span {
+        color: rgba(255, 255, 255, 0.55);
+      }
+
+      /* ----- build, progress and downloads ------------------------------ */
+      /* .bar-track/.bar-fill are loader.html's import progress bar, scaled
+         down, so per-variant diff progress reads as the same widget. */
+      .progress-row {
+        margin-bottom: 12px;
+      }
+      .progress-row-label {
+        font-size: 0.88em;
+        color: rgba(255, 255, 255, 0.75);
+        margin-bottom: 6px;
+      }
+      .bar-track {
+        width: 100%;
+        height: clamp(14px, 1.6vmin, 20px);
+        background: var(--bg-color-section-lighter);
+        border-radius: clamp(7px, 0.8vmin, 10px);
+        overflow: hidden;
+        border: 2px solid var(--black);
+        position: relative;
+      }
+      .bar-fill {
+        height: 100%;
+        background: var(--white);
+        width: 0;
+        transition: width 0.3s ease;
+      }
+      #build-summary p {
+        margin: 4px 0;
+        font-size: 0.92em;
+        color: rgba(255, 255, 255, 0.85);
+      }
+      #downloads {
+        margin-top: 8px;
+      }
+      .stamp-head {
+        font-size: 1.05em;
+        margin-bottom: 6px;
+      }
+      /* One column per platform where there is room, so the three installers
+         read as equal choices. */
+      .stamp-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 14px;
+        margin-top: 14px;
+      }
+      .stamp-grid .btn {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+      }
+      .stamp-ext {
+        font-size: 0.78em;
+        opacity: 0.75;
+        letter-spacing: 0.06em;
+      }
+      .stamp-foot {
+        margin-top: 22px;
+        padding-top: 16px;
+        border-top: 1px solid var(--accent-color);
+      }
+      #downloads .btn {
+        margin: 4px 8px 4px 0;
+      }
+      .build-status {
+        margin-top: 8px;
+        font-size: 0.88em;
+        min-height: 1.2em;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .build-status:empty {
+        display: none;
+      }
+      .build-status.ok {
+        color: var(--green);
+      }
+      .build-status.err {
+        color: #ff9aa2;
+      }
+      #stamp-section {
+        margin-top: 22px;
+        padding-top: 18px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      #stamp-section[hidden] {
+        display: none;
+      }
+      .stamp-row {
+        margin-bottom: 16px;
+      }
+      /* Inside the grid the gap does that job. */
+      .stamp-grid .stamp-row {
+        margin-bottom: 0;
+      }
+
+      /* ----- freshness modal --------------------------------------------- */
+      dialog#freshness-modal {
+        max-width: min(560px, 92vw);
+        background: var(--bg-color);
+        color: var(--default);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+        padding: 22px 24px;
+        font-family: "Georgia", serif;
+      }
+      dialog#freshness-modal::backdrop {
+        background: rgba(0, 0, 0, 0.7);
+      }
+      dialog#freshness-modal h3 {
+        color: var(--purple);
+        font-weight: normal;
+        letter-spacing: 0.03em;
+        margin: 0 0 12px;
+      }
+      dialog#freshness-modal p {
+        line-height: 1.55;
+        margin: 0 0 18px;
+      }
+      dialog#freshness-modal menu {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      @media (max-width: 720px) {
+        .wrap {
+          padding-top: 56px;
+        }
+        .pair-row-fields {
+          grid-template-columns: 1fr;
+          gap: 18px 0;
+        }
+        .pair-divider {
+          display: none;
+        }
+        .pair-row select {
+          min-width: 0;
+          width: 100%;
+        }
+        .field-row {
+          flex-direction: column;
+          gap: 0;
+        }
+        #editor,
+        .editor-host {
+          height: 240px;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <script>
+      // Same Android flagging as loader.html and notice.html, so the page
+      // picks the same art.
+      (function () {
+        try {
+          if (/TCOAALApp\//.test(navigator.userAgent)) {
+            document.body.classList.add("android-app");
+            document.documentElement.classList.add("android-app");
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <div class="bg" aria-hidden="true"></div>
+
+    <a class="back-link" href="loader.html" aria-label="Back to loader">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M19 12H5M12 19l-7-7 7-7" />
+      </svg>
+      <span>Back</span>
+    </a>
+
+    <main class="wrap">
+      <h1>Package your mod</h1>
+      <p class="page-status" id="page-status"></p>
+
+      <section class="pane" id="pane-gate"></section>
+
+      <section class="pane" id="pane-bases" hidden>
+        <h2>Your game and your mod</h2>
+        <p class="hint">
+          Pick the game version you modded, then import your modded copy of it.
+          If your mod also works on another version, add a row for that one too.
+        </p>
+        <div id="pair-rows"></div>
+        <button type="button" class="btn small" id="add-pair">
+          Add another version
+        </button>
+        <p class="note" id="catalog-note" hidden></p>
+      </section>
+
+      <section class="pane" id="pane-meta" hidden>
+        <h2>Mod details</h2>
+        <p class="hint">
+          Players see all of this before they install, and the installer uses it
+          to name itself.
+        </p>
+
+        <div class="field">
+          <label for="meta-id">Mod ID<span class="req">*</span></label>
+          <input
+            type="text"
+            id="meta-id"
+            maxlength="40"
+            placeholder="mod-id"
+            autocomplete="off"
+          />
+          <p class="field-hint">
+            Lowercase letters, digits and dashes, 3 to 40 characters. It becomes
+            a folder on the player's disk and the prefix on their save files, so
+            if you change it later the loader sees a different mod rather than
+            an update to this one.
+          </p>
+          <p class="field-error" id="meta-id-error"></p>
+        </div>
+
+        <div class="field">
+          <label for="meta-name">Name<span class="req">*</span></label>
+          <input
+            type="text"
+            id="meta-name"
+            maxlength="60"
+            placeholder="Mod name"
+          />
+          <p class="field-error" id="meta-name-error"></p>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="meta-author">Author</label>
+            <input
+              type="text"
+              id="meta-author"
+              maxlength="80"
+              placeholder="Author name"
+            />
+          </div>
+          <div class="field">
+            <label for="meta-version">Version<span class="req">*</span></label>
+            <input
+              type="text"
+              id="meta-version"
+              value="1.0.0"
+              placeholder="1.0.0"
+            />
+            <p class="field-error" id="meta-version-error"></p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="meta-description">Description</label>
+          <textarea
+            id="meta-description"
+            maxlength="500"
+            placeholder="What your mod does"
+          ></textarea>
+          <p class="field-error" id="meta-description-error"></p>
+        </div>
+
+        <div class="field">
+          <label for="meta-icon">Icon</label>
+          <input
+            type="file"
+            id="meta-icon"
+            accept="image/png,image/jpeg,image/webp"
+          />
+          <div class="icon-preview" id="icon-preview" hidden>
+            <img id="icon-preview-img" alt="" />
+            <span class="icon-preview-text" id="icon-preview-text"></span>
+            <button type="button" class="btn small danger" id="icon-remove-btn">
+              Remove
+            </button>
+          </div>
+          <p class="field-error" id="meta-icon-error"></p>
+        </div>
+
+        <fieldset class="field">
+          <legend>Save compatibility</legend>
+          <label>
+            <input
+              type="radio"
+              name="meta-saves"
+              id="meta-saves-isolated"
+              value="isolated"
+              checked
+            />
+            Isolated (recommended)
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="meta-saves"
+              id="meta-saves-shared"
+              value="shared"
+            />
+            Shared with the base game
+          </label>
+          <p class="field-hint" id="meta-saves-shared-hint" hidden>
+            Pick shared for cosmetic mods and translations only. If your mod
+            touches switches, variables or map ids, a save shared with the base
+            game will eventually break.
+          </p>
+        </fieldset>
+
+        <p class="hint">
+          Update checks. Fill in either source, both, or neither. On every
+          launch the installer asks the sources you gave it whether anything
+          newer than the version above exists, and offers the player the update
+          if one does.
+        </p>
+        <div class="field-row">
+          <div class="field">
+            <label for="meta-update-github">GitHub repo</label>
+            <input
+              type="text"
+              id="meta-update-github"
+              placeholder="owner/repo"
+              autocomplete="off"
+            />
+            <p class="field-hint">
+              The installer reads your newest GitHub release and takes the
+              <code>.tcoaalmod</code> attached to it.
+            </p>
+            <p class="field-error" id="meta-update-github-error"></p>
+          </div>
+          <div class="field">
+            <label for="meta-update-manifest">Update file URL</label>
+            <input
+              type="text"
+              id="meta-update-manifest"
+              placeholder="https://example.com/mod-id.json"
+              autocomplete="off"
+            />
+            <p class="field-hint">
+              For hosting updates yourself. Point this at a small JSON file you
+              keep current:
+              <code
+                >{"version": "1.1.0", "url":
+                "https://example.com/mod-id.tcoaalmod"}</code
+              >
+            </p>
+            <p class="field-error" id="meta-update-manifest-error"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="pane" id="pane-theme" hidden>
+        <h2>Customize</h2>
+        <p class="hint">
+          What a player sees when they open your installer. Pick a look below,
+          or open Advanced and write the page yourself.
+        </p>
+
+        <div class="preset-grid" id="preset-grid"></div>
+
+        <div id="theme-preview-wrap">
+          <iframe
+            id="theme-preview"
+            sandbox="allow-scripts"
+            title="Installer preview"
+          ></iframe>
+        </div>
+        <p class="row-status" id="theme-status"></p>
+
+        <div class="field">
+          <label for="theme-music">Background music</label>
+          <input
+            type="file"
+            id="theme-music"
+            accept="audio/mpeg,audio/ogg,audio/mp4,audio/wav,audio/flac,audio/webm,.mp3,.ogg,.m4a,.wav,.flac,.opus,.webm"
+          />
+          <p class="field-hint">
+            Optional. Loops on the installer screen until the player starts the
+            game. It travels inside the installer, so every megabyte here is a
+            megabyte on their download. Players get a mute button and the app
+            remembers what they chose.
+          </p>
+          <div class="icon-preview" id="music-preview" hidden>
+            <span class="icon-preview-text" id="music-preview-text"></span>
+            <button type="button" class="btn small" id="music-play-btn">
+              Listen
+            </button>
+            <button type="button" class="btn small danger" id="music-remove-btn">
+              Remove
+            </button>
+          </div>
+          <p class="field-error" id="theme-music-error"></p>
+        </div>
+
+        <div class="customize-foot">
+          <button
+            type="button"
+            class="link-toggle"
+            id="theme-advanced-toggle"
+            aria-expanded="false"
+            aria-controls="advanced"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M5 1.5 12 8l-7 6.5z" fill="currentColor" />
+            </svg>
+            Advanced: write the HTML, CSS and JS yourself
+          </button>
+          <button type="button" class="btn small" id="theme-reset-btn" hidden>
+            Undo my edits
+          </button>
+          <button type="button" class="btn small" id="theme-download-btn">
+            Download source
+          </button>
+        </div>
+
+        <div id="advanced" hidden>
+          <div class="editor-tabs" role="tablist">
+            <button
+              type="button"
+              class="editor-tab"
+              role="tab"
+              data-file="html"
+              aria-selected="true"
+            >
+              index.html
+            </button>
+            <button
+              type="button"
+              class="editor-tab"
+              role="tab"
+              data-file="css"
+              aria-selected="false"
+            >
+              theme.css
+            </button>
+            <button
+              type="button"
+              class="editor-tab"
+              role="tab"
+              data-file="js"
+              aria-selected="false"
+            >
+              theme.js
+            </button>
+          </div>
+          <div class="editor-host plain" id="editor-host">
+            <textarea id="editor" spellcheck="false" wrap="off"></textarea>
+          </div>
+          <div class="api-ref">
+            <h3>Functions your theme can call</h3>
+            <ul id="theme-api-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="pane" id="pane-build" hidden>
+        <h2>Build</h2>
+        <p class="hint">
+          Each modded copy is compared against the build it came from, and only
+          the differences go into the <code>.tcoaalmod</code> file. Nothing from
+          the game itself travels inside it.
+        </p>
+        <button type="button" class="btn primary" id="do-build">
+          Build mod file
+        </button>
+        <div id="build-progress"></div>
+        <p class="build-status" id="build-status"></p>
+        <div id="build-summary"></div>
+
+        <div id="stamp-section" hidden>
+          <h3 class="stamp-head">Hand your players an installer</h3>
+          <p class="hint">
+            One file per system, with your Customize screen inside it. A
+            player downloads it, double-clicks it, and it finds their game on
+            its own. There is nothing for them to unzip, place or configure.
+            Build the ones your players are on.
+          </p>
+
+          <fieldset class="field" id="stamp-mode">
+            <legend>What the installer carries</legend>
+            <label>
+              <input
+                type="radio"
+                name="stamp-mode"
+                id="stamp-mode-full"
+                value="full"
+                checked
+              />
+              The mod itself
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="stamp-mode"
+                id="stamp-mode-online"
+                value="online"
+              />
+              A link to it (online installer)
+            </label>
+            <p class="field-hint">
+              An online installer is a few hundred KB instead of your whole
+              mod. It still wears your name, your icon and your Customize
+              screen, and it downloads the mod when the player presses Install.
+              Publish the <code>.tcoaalmod</code> first, then paste where it
+              lives.
+            </p>
+            <div class="field" id="stamp-online-field" hidden>
+              <label for="stamp-online-url">Where your mod is published</label>
+              <input
+                type="text"
+                id="stamp-online-url"
+                placeholder="https://github.com/owner/repo"
+                autocomplete="off"
+              />
+              <p class="field-hint" id="stamp-online-hint"></p>
+              <p class="field-error" id="stamp-online-url-error"></p>
+            </div>
+          </fieldset>
+
+          <div class="stamp-grid" id="stamp-grid">
+            <div class="stamp-row">
+              <button type="button" class="btn primary" id="stamp-windows-btn">
+                Windows installer
+                <span class="stamp-ext">.exe</span>
+              </button>
+              <p class="build-status" id="windows-stamp-status"></p>
+              <p class="note" id="windows-stamp-note" hidden></p>
+            </div>
+            <div class="stamp-row">
+              <button type="button" class="btn primary" id="stamp-mac-btn">
+                macOS installer
+                <span class="stamp-ext">.app</span>
+              </button>
+              <p class="build-status" id="mac-stamp-status"></p>
+              <p class="note" id="mac-stamp-note" hidden></p>
+            </div>
+            <div class="stamp-row">
+              <button type="button" class="btn primary" id="stamp-linux-btn">
+                Linux installer
+                <span class="stamp-ext">.AppImage</span>
+              </button>
+              <p class="build-status" id="linux-stamp-status"></p>
+            </div>
+          </div>
+
+          <p class="hint stamp-foot">
+            The mod file on its own, for players who already run other mods
+            through the loader:
+          </p>
+          <div id="downloads"></div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="freshness-modal">
+      <h3 id="fm-title"></h3>
+      <p id="fm-body"></p>
+      <menu>
+        <button type="button" class="btn" value="cancel" id="fm-cancel">
+          Cancel
+        </button>
+        <button type="button" class="btn primary" value="ok" id="fm-ok">
+          Confirm
+        </button>
+      </menu>
+    </dialog>
+
+    <script>
+      "use strict";
+
+      /*
+       * Shell, gate, base pairs and the freshness modal.
+       *
+       * The three script blocks in this page are classic (non-module) and
+       * share one global scope, so a top-level name declared here is visible
+       * to the two below and every one of them must be unique.
+       *
+       * Nothing is imported from loader.html at runtime: this page opens the
+       * same IndexedDB directly, with copies of the constants and the
+       * idbGet/hasBaseGame contract loader.html implements.
+       */
+
+      // IDB constants and helpers, mirroring loader.html's game-version
+      // module. Copied, not imported: its own copies live in a closure this
+      // page cannot reach.
+
+      const DB_NAME = "tcoaal";
+      // "assets" is the store loader.html actually writes; any other name
+      // opens an empty store and the gate finds no game at all.
+      const STORE = "assets";
+      const GAMEVER_PREFIX = "gamever:";
+      const GAMEVER_REGISTRY_KEY = "__game_versions__";
+      const ACTIVE_GAME_ID_KEY = "__active_game_id__";
+
+      // loader.html's openDb(), minus its onversionchange close (nothing
+      // here is a long-lived writer) and its upgrade path (this page only
+      // reads; a missing store is hasBaseGame() reporting no game).
+      function openDb() {
+        return new Promise(function (resolve, reject) {
+          const req = indexedDB.open(DB_NAME);
+          req.onsuccess = function () {
+            resolve(req.result);
+          };
+          req.onerror = function () {
+            reject(req.error);
+          };
+        });
+      }
+
+      // loader.html's idbGet().
+      function idbGet(db, key) {
+        return new Promise(function (resolve) {
+          const r = db.transaction(STORE).objectStore(STORE).get(key);
+          r.onsuccess = function () {
+            resolve(r.result);
+          };
+          r.onerror = function () {
+            resolve(undefined);
+          };
+        });
+      }
+
+      // loader.html's idbKeys(), which hasBaseGame() below needs and which
+      // is private to that page's own IIFE.
+      function idbKeys(db) {
+        return new Promise(function (resolve) {
+          const out = [];
+          const r = db.transaction(STORE).objectStore(STORE).openKeyCursor();
+          r.onsuccess = function () {
+            const c = r.result;
+            if (!c) return resolve(out);
+            out.push(c.key);
+            c.continue();
+          };
+          r.onerror = function () {
+            resolve(out);
+          };
+        });
+      }
+
+      // loader.html's isBaseFileKey().
+      function isBaseFileKey(k) {
+        return (
+          typeof k === "string" &&
+          k.indexOf("mod:") !== 0 &&
+          k.indexOf(GAMEVER_PREFIX) !== 0 &&
+          k.indexOf("__") !== 0
+        );
+      }
+
+      // True only when the ACTIVE game (the plain-key namespace) has data/
+      // files, never a parked "gamever:" version or a mod overlay. The gate
+      // fails closed on a false: no base to diff against, no build.
+      async function hasBaseGame(db) {
+        const keys = await idbKeys(db);
+        return keys.some(function (k) {
+          return isBaseFileKey(k) && k.indexOf("data/") === 0;
+        });
+      }
+
+      // `reg` is the PARKED-version registry, so this resolves a label only
+      // for a parked id. The active game's own label comes from
+      // activeLabel() below, as it does in loader.html.
+      function labelFor(reg, id) {
+        if (!id || !reg || !reg[id]) return null;
+        return reg[id].label || id;
+      }
+
+      // The active game's label, read the way loader.html reads it:
+      // baseVersion -> the active game's meta -> "imported game". NOT from
+      // the parked registry, which never holds the active id, and which
+      // would leave every ordinary import on the placeholder - a label no
+      // real version can equal, so the freshness check below would warn on
+      // every selection. Only the js/main.js path is mirrored; loader.html's
+      // further CLD fallback needs dekit, which this page does not load.
+      const ACTIVE_GAME_META_KEY = "__active_game_meta__";
+      function mainJsVersion(raw) {
+        if (raw == null) return null;
+        try {
+          const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
+          const m = new TextDecoder()
+            .decode(bytes)
+            .match(/GAME_VERSION\s*=\s*["']([^"']+)["']/);
+          return (m && m[1].trim()) || null;
+        } catch (e) {
+          return null;
+        }
+      }
+      async function activeGameLabel(db) {
+        const v = mainJsVersion(await idbGet(db, "js/main.js"));
+        if (v) return { label: "v" + v, version: v };
+        let meta = null;
+        try {
+          const raw = await idbGet(db, ACTIVE_GAME_META_KEY);
+          meta = raw ? JSON.parse(raw) : null;
+        } catch (e) {
+          meta = null;
+        }
+        if (meta && (meta.label || meta.version)) {
+          return {
+            label: meta.label || "v" + meta.version,
+            version: meta.version || null,
+          };
+        }
+        return { label: "imported game", version: null };
+      }
+
+      // Every importable base: the active game (id: null) plus every version
+      // parked under "gamever:{id}:".
+      async function listImportedVersions(db) {
+        const reg = await idbGet(db, GAMEVER_REGISTRY_KEY);
+        const parsed = !reg
+          ? {}
+          : typeof reg === "string"
+            ? JSON.parse(reg)
+            : reg;
+        const activeId = await idbGet(db, ACTIVE_GAME_ID_KEY);
+        const out = [];
+        if (await hasBaseGame(db)) {
+          const act = await activeGameLabel(db);
+          out.push({ id: null, label: act.label, active: true });
+        }
+        Object.keys(parsed).forEach(function (id) {
+          if (id !== activeId)
+            out.push({ id: id, label: parsed[id].label || id, active: false });
+        });
+        return out;
+      }
+
+      // notice.html's four-entity escape, used for every interpolated
+      // string on this page that becomes markup.
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      // Page-level status line (window.__CREATE__.setStatus).
+      function setStatus(msg, kind) {
+        const $s = document.getElementById("page-status");
+        if (!$s) return;
+        $s.textContent = msg || "";
+        $s.className = "page-status" + (kind ? " " + kind : "");
+      }
+
+      // Gate.
+      function renderGateFailure(message) {
+        document.getElementById("pane-gate").innerHTML =
+          '<p class="hint">' +
+          escapeHtml(message) +
+          '</p><p><a class="btn" href="loader.html">Go to the loader</a></p>';
+      }
+
+      let _db = null;
+      let _versions = [];
+
+      // Base pair rows.
+      let _pairRowSeq = 0;
+
+      function populateBaseSelect($select) {
+        const opts = ['<option value="">Which version did you mod?</option>'];
+        _versions.forEach(function (v) {
+          const val = v.id === null ? "__active__" : v.id;
+          opts.push(
+            '<option value="' +
+              escapeHtml(val) +
+              '">' +
+              escapeHtml(v.label) +
+              "</option>",
+          );
+        });
+        $select.innerHTML = opts.join("");
+      }
+
+      // .git discovery. A modded copy is often a git checkout whose origin
+      // remote already names the GitHub repo the update-source field wants.
+      //
+      // It only fills fields left empty, so it can never overwrite anything
+      // typed, and no .git / no origin / a non-GitHub origin is silently no
+      // discovery: this is a convenience, not a step.
+
+      // GitHub's own naming rules, not a loose /^[\w.-]+$/: this ends up in
+      // a URL the native loader fetches, and a repo named ".." would be a
+      // segment that climbs out of the API path it was pasted into.
+      function isGithubSlug(v) {
+        const parts = String(v || "").split("/");
+        if (parts.length !== 2) return false;
+        if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(parts[0])) {
+          return false;
+        }
+        if (!/^[A-Za-z0-9._-]+$/.test(parts[1])) return false;
+        return parts[1] !== "." && parts[1] !== "..";
+      }
+
+      // Every form git writes into a config: https, git://, ssh://, and the
+      // scp-style "git@github.com:owner/repo.git".
+      function githubSlugFromUrl(url) {
+        if (!url) return null;
+        let u = String(url).trim();
+        u = u.replace(/^[a-z][a-z0-9+.-]*:\/\//i, ""); // scheme
+        u = u.replace(/^[^@/]+@/, ""); // userinfo, or scp-style user
+        const m = u.match(
+          /^(?:www\.)?github\.com[/:]+([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i,
+        );
+        if (!m) return null;
+        const slug = m[1] + "/" + m[2];
+        return isGithubSlug(slug) ? slug : null;
+      }
+
+      // Enough git-config parsing to find a [remote "x"] url. Prefers
+      // origin, falls back to the first remote for a checkout that names
+      // its remote something else.
+      function githubSlugFromGitConfig(text) {
+        const lines = String(text || "").split(/\r?\n/);
+        const urls = {};
+        const order = [];
+        let remote = "";
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          const head = line.match(/^\[remote\s+"([^"]+)"\]$/);
+          if (head) {
+            remote = head[1];
+            continue;
+          }
+          if (line.charAt(0) === "[") {
+            remote = "";
+            continue;
+          }
+          if (!remote) continue;
+          const kv = line.match(/^url\s*=\s*(.+)$/);
+          if (kv && !urls[remote]) {
+            urls[remote] = kv[1].trim();
+            order.push(remote);
+          }
+        }
+        const pick = urls.origin || urls[order[0]];
+        return githubSlugFromUrl(pick);
+      }
+
+      // A repo name guesses the mod id well, but it has to survive
+      // validateId() or the field arrives already invalid.
+      function modIdFromRepoName(repo) {
+        const id = String(repo || "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        return id.length >= 3 && id.length <= 40 ? id : null;
+      }
+
+      // A sentence for the row status, or "" when there was nothing to find
+      // or every target field was already filled in.
+      function applyGitDiscovery(slug) {
+        if (!slug) return "";
+        const filled = [];
+        const $gh = document.getElementById("meta-update-github");
+        if (!$gh.value.trim()) {
+          $gh.value = slug;
+          showFieldError("meta-update-github", "");
+          filled.push("the GitHub repo");
+        }
+        const $id = document.getElementById("meta-id");
+        const id = modIdFromRepoName(slug.split("/")[1]);
+        if (id && !$id.value.trim()) {
+          $id.value = id;
+          showFieldError("meta-id", "");
+          filled.push("the mod ID");
+        }
+        if (!filled.length) return "";
+        const one = filled.length === 1;
+        return (
+          "Found " +
+          slug +
+          " in .git, so " +
+          filled.join(" and ") +
+          " above " +
+          (one ? "is" : "are") +
+          " filled in. Change " +
+          (one ? "it" : "them") +
+          " if that is wrong."
+        );
+      }
+
+      // A .git that is a file (a worktree or a submodule) throws here and is
+      // simply no discovery.
+      async function readGitConfigFromDir(handle) {
+        try {
+          const git = await handle.getDirectoryHandle(".git");
+          const cfg = await git.getFileHandle("config");
+          return await (await cfg.getFile()).text();
+        } catch (e) {
+          return null;
+        }
+      }
+
+      // The whole archive, not just the game root: a zipped checkout keeps
+      // .git/ beside www/, one level above the root findZipGameRoot() picks.
+      // Shallowest match wins.
+      function findGitConfigInZip(entries) {
+        let best = null;
+        entries.forEach(function (data, name) {
+          if (!/(^|\/)\.git\/config$/.test(name)) return;
+          if (best === null || name.length < best.length) best = name;
+        });
+        return best === null
+          ? null
+          : new TextDecoder().decode(entries.get(best));
+      }
+
+      function setRowStatus(row, msg, kind) {
+        const $status = row.querySelector(".row-status");
+        $status.textContent = msg || "";
+        $status.className = "row-status" + (kind ? " " + kind : "");
+      }
+
+      // pickModZip, the fallback for browsers with no showDirectoryPicker
+      // (Firefox, Safari), is defined once in the last script block. A stub
+      // of the same name here would shadow it or be shadowed by it.
+
+      async function pickModFolder(row) {
+        if (!window.showDirectoryPicker) {
+          return pickModZip(row);
+        }
+        const handle = await window.showDirectoryPicker({ id: "tcoaal-mod" });
+        const names = [];
+        for await (const e of handle.values()) names.push(e.name);
+        const hasWww = names.indexOf("www") !== -1;
+        const hasData = names.indexOf("data") !== -1;
+        if (!hasWww && !hasData) {
+          setRowStatus(
+            row,
+            "That folder has no www/ or data/ in it, so it is not a game copy.",
+            "err",
+          );
+          return;
+        }
+        row._handle = handle;
+        // A row carries a handle OR a zip file list, never a stale mix of
+        // both from an earlier pick in either direction.
+        row._files = null;
+        markRowImported(row, handle.name);
+        setRowStatus(row, "Ready: " + handle.name, "ok");
+
+        const cfg = await readGitConfigFromDir(handle);
+        const note = applyGitDiscovery(
+          cfg ? githubSlugFromGitConfig(cfg) : null,
+        );
+        if (note)
+          setRowStatus(row, "Ready: " + handle.name + ". " + note, "ok");
+      }
+
+      // Inline SVG, as loader.html's tool-icon and github-icon are.
+      const FOLDER_SVG =
+        '<svg viewBox="0 0 16 16" aria-hidden="true">' +
+        '<path fill="currentColor" d="M1.5 3h4.2l1.3 1.6H14a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 .5-1Zm.5 2.6V13h12V5.6H2Z"/>' +
+        "</svg>";
+
+      // The button carries the "source attached" state, so a filled row
+      // reads as filled from the button, not only from the line under it.
+      function markRowImported(row, name) {
+        const $btn = row.querySelector(".import-btn");
+        $btn.classList.add("filled");
+        row.querySelector(".import-label").textContent = "Change";
+        row.querySelector(".folder-name").textContent = name;
+      }
+
+      function addPairRow() {
+        const idx = _pairRowSeq++;
+        const row = document.createElement("div");
+        row.className = "pair-row";
+        row.dataset.index = String(idx);
+        row._selectValue = "";
+        const removable = idx > 0;
+        // Two labelled steps with a rule between them: the select and the
+        // import answer different questions.
+        row.innerHTML =
+          '<div class="pair-row-fields">' +
+          "<div>" +
+          '<span class="pair-step-label">' +
+          '<span class="step-num" aria-hidden="true">1</span>' +
+          "Game version you modded</span>" +
+          '<select class="base-select"></select>' +
+          "</div>" +
+          '<div class="pair-divider" aria-hidden="true"></div>' +
+          "<div>" +
+          '<span class="pair-step-label">' +
+          '<span class="step-num" aria-hidden="true">2</span>' +
+          "Your modded copy</span>" +
+          '<button type="button" class="btn import-btn pick-folder-btn">' +
+          FOLDER_SVG +
+          '<span class="import-label">Import your mod</span></button>' +
+          '<span class="folder-name"></span>' +
+          "</div>" +
+          "</div>" +
+          '<p class="row-status"></p>' +
+          (removable
+            ? '<button type="button" class="btn small danger remove-row">Remove</button>'
+            : "");
+
+        document.getElementById("pair-rows").appendChild(row);
+
+        const $select = row.querySelector(".base-select");
+        populateBaseSelect($select);
+        $select.addEventListener("change", function () {
+          onBaseSelectChange(row, $select);
+        });
+
+        row
+          .querySelector(".pick-folder-btn")
+          .addEventListener("click", function () {
+            pickModFolder(row).catch(function (e) {
+              // Dismissing the picker rejects with AbortError, which is not
+              // an error.
+              if (e && e.name === "AbortError") return;
+              setRowStatus(
+                row,
+                "Could not read that folder: " + ((e && e.message) || e),
+                "err",
+              );
+            });
+          });
+
+        const $remove = row.querySelector(".remove-row");
+        if ($remove) {
+          $remove.addEventListener("click", function () {
+            row.remove();
+          });
+        }
+
+        return row;
+      }
+
+      // A half-filled row (a base with no folder, or the reverse) is not a
+      // pair and is skipped here rather than reaching the worker as an
+      // undefined handle it would reject mid-build.
+      //
+      // A row's modded source is a directory handle OR an unpacked zip's
+      // file list, so both count as complete: dropping the _files case would
+      // silently discard every row a Firefox or Safari modder fills in.
+      function getPairs() {
+        const rows = Array.prototype.slice.call(
+          document.querySelectorAll("#pair-rows .pair-row"),
+        );
+        const pairs = [];
+        rows.forEach(function (row) {
+          const $select = row.querySelector(".base-select");
+          const val = $select.value;
+          if (!val || (!row._handle && !row._files)) return;
+          const baseVerId = val === "__active__" ? null : val;
+          const label = $select.options[$select.selectedIndex].textContent;
+          const pair = { baseVerId: baseVerId, label: label };
+          if (row._handle) pair.modHandle = row._handle;
+          else pair.files = row._files;
+          pairs.push(pair);
+        });
+        return pairs;
+      }
+
+      // Freshness check and modal.
+      const VERSIONS_URL =
+        "https://raw.githubusercontent.com/Kidev-org/TCOAALBrowserLoader/main/tools/tcoaal-versions.json";
+
+      let _catalog = null;
+      async function loadCatalog() {
+        if (_catalog !== null) return _catalog;
+        try {
+          const r = await fetch(VERSIONS_URL, { cache: "no-cache" });
+          _catalog = r.ok ? await r.json() : false;
+        } catch (e) {
+          _catalog = false;
+        }
+        return _catalog;
+      }
+
+      function newestVersion(cat) {
+        let best = null;
+        (cat.majors || []).forEach(function (maj) {
+          (maj.versions || []).forEach(function (v) {
+            if (!best || (v.date || "") > (best.date || "")) best = v;
+          });
+        });
+        return best;
+      }
+
+      // The catalog says "3.0.13"; an imported version's label went through
+      // loader.html's verText() and says "v3.0.13". Strip the prefix, or a
+      // current import trips the freshness modal on formatting alone.
+      function normVer(s) {
+        return String(s || "")
+          .trim()
+          .replace(/^v/i, "");
+      }
+
+      function showFreshnessModal(selectedLabel, newestLabel) {
+        return new Promise(function (resolve) {
+          const $modal = document.getElementById("freshness-modal");
+          document.getElementById("fm-title").textContent =
+            "This isn't the newest build";
+          document.getElementById("fm-body").textContent =
+            "You picked " +
+            selectedLabel +
+            ", but the newest known build is " +
+            newestLabel +
+            ". Players already on the newer build will not be able to " +
+            "install a mod built against an older one; they will be " +
+            "offered the matching download instead. Keep " +
+            selectedLabel +
+            " as this row's base?";
+
+          function onOk() {
+            $modal.close("ok");
+          }
+          function onCancel() {
+            $modal.close("cancel");
+          }
+          function onBackdrop(e) {
+            if (e.target === $modal) onCancel();
+          }
+          function onClose() {
+            $modal.removeEventListener("close", onClose);
+            $modal.removeEventListener("click", onBackdrop);
+            $ok.removeEventListener("click", onOk);
+            $cancel.removeEventListener("click", onCancel);
+            // Anything but the Confirm button (Cancel, Escape, the backdrop)
+            // reverts the selection: backing out has to actually stop.
+            resolve($modal.returnValue === "ok");
+          }
+
+          const $ok = document.getElementById("fm-ok");
+          const $cancel = document.getElementById("fm-cancel");
+          $ok.addEventListener("click", onOk);
+          $cancel.addEventListener("click", onCancel);
+          $modal.addEventListener("close", onClose);
+          // A native <dialog> has no backdrop-dismiss behaviour of its own.
+          $modal.addEventListener("click", onBackdrop);
+          // Escape leaves returnValue at whatever the last close() set. This
+          // dialog is a reused singleton, so a stale "ok" would make Escape
+          // resolve as confirmed. Reset before every open.
+          $modal.returnValue = "";
+          $modal.showModal();
+        });
+      }
+
+      async function onBaseSelectChange(row, $select) {
+        const prevValue = row._selectValue;
+        row._selectValue = $select.value;
+        if (!$select.value) return;
+
+        const label = $select.options[$select.selectedIndex].textContent;
+
+        // A base with no readable version shows a placeholder label, which
+        // no catalog version can equal: comparing it would warn on every
+        // selection and mean nothing.
+        if (!/^\d+(\.\d+)*$/.test(normVer(label))) return;
+
+        const cat = await loadCatalog();
+        if (cat === false) {
+          const $note = document.getElementById("catalog-note");
+          $note.textContent =
+            "Could not reach the version list to check how current that build is.";
+          $note.hidden = false;
+          return;
+        }
+
+        const newest = newestVersion(cat);
+        if (!newest || !newest.version) return;
+        if (normVer(label) === normVer(newest.version)) return;
+
+        const confirmed = await showFreshnessModal(label, "v" + newest.version);
+        if (!confirmed) {
+          $select.value = prevValue;
+          row._selectValue = prevValue;
+        }
+      }
+
+      // Boot.
+      async function boot() {
+        let db;
+        try {
+          db = await openDb();
+        } catch (e) {
+          renderGateFailure(
+            "Could not open the local game database: " +
+              ((e && e.message) || e) +
+              ".",
+          );
+          return;
+        }
+
+        let versions;
+        try {
+          versions = await listImportedVersions(db);
+        } catch (e) {
+          renderGateFailure(
+            "Could not read the imported game versions: " +
+              ((e && e.message) || e) +
+              ".",
+          );
+          return;
+        }
+
+        // Fail closed: with no imported game there is no base to diff
+        // against, so every other pane stays hidden and this is as far as
+        // the page goes.
+        if (versions.length === 0) {
+          renderGateFailure(
+            "There is no game imported in this browser yet. Import your copy in the loader first, then come back.",
+          );
+          return;
+        }
+
+        _db = db;
+        _versions = versions;
+
+        document.getElementById("pane-gate").hidden = true;
+        ["pane-bases", "pane-meta", "pane-theme", "pane-build"].forEach(
+          function (id) {
+            document.getElementById(id).hidden = false;
+          },
+        );
+
+        addPairRow();
+        document
+          .getElementById("add-pair")
+          .addEventListener("click", function () {
+            addPairRow();
+          });
+      }
+
+      window.__CREATE__ = {
+        getPairs: getPairs,
+        setStatus: setStatus,
+      };
+
+      boot();
+    </script>
+
+    <!-- ModPackage, for "Download the template" here and for build() in the
+         block below. -->
+    <script src="js/libs/mod-package.js"></script>
+    <!-- CodeMirror 5 (core + xml/javascript/css/htmlmixed modes and two edit
+         addons), vendored so the page keeps working offline. Loaded before
+         the block below, which calls CodeMirror.fromTextArea() during its
+         own init; the block degrades to the plain <textarea> if this script
+         is missing, so the order is a requirement, not an assumption. -->
+    <script src="js/libs/codemirror.js"></script>
+
+    <script>
+      "use strict";
+
+      /*
+       * Mod metadata form, theme picker, sandboxed live preview, and
+       * getMeta()/getTheme() on window.__CREATE__.
+       *
+       * One global scope with the block above, so every top-level name here
+       * is new: a duplicate declaration across two <script> tags in one
+       * document is a SyntaxError. escapeHtml() is reused, not redefined.
+       */
+
+      // Field validators: value in, error string or null out. Pure, so
+      // tools/test-create.js can lift and run each one on its own.
+
+      // Each regex is inlined rather than hoisted: the test harness lifts
+      // one function's source at a time, so anything it needs has to travel
+      // inside its own body.
+
+      // 3 to 40 characters: one fixed char + {1,38} + one fixed char.
+      function validateId(v) {
+        return /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(v)
+          ? null
+          : "Use lowercase letters, digits and dashes, 3 to 40 characters.";
+      }
+
+      function validateName(v) {
+        if (!v) return "Name is required.";
+        if (v.length > 60) return "Keep the name to 60 characters or fewer.";
+        return null;
+      }
+
+      function validateVersion(v) {
+        return /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(v)
+          ? null
+          : "Use a semantic version such as 1.0.0.";
+      }
+
+      function validateDescription(v) {
+        if (v && v.length > 500) {
+          return "Keep the description to 500 characters or fewer.";
+        }
+        return null;
+      }
+
+      function validateGithub(v) {
+        if (!v) return null;
+        return isGithubSlug(v)
+          ? null
+          : "Use the owner/repo form, such as octocat/hello-world.";
+      }
+
+      function validateManifestUrl(v) {
+        if (!v) return null;
+        let u;
+        try {
+          u = new URL(v);
+        } catch (e) {
+          return "Enter a full https:// URL for the update file.";
+        }
+        return u.protocol === "https:"
+          ? null
+          : "Enter a full https:// URL for the update file.";
+      }
+
+      // A theme entry name must never escape the "theme/" prefix it gets on
+      // its way into the ZIP and then onto a player's disk. The modder names
+      // these files, so treat them as adversarial.
+      //
+      // Rejecting "", ".", ".." and backslashes is not enough. "C:" passes
+      // all of those, and "theme/C:/evil.dll" is a Windows zip-slip: a naive
+      // join (Rust's PathBuf::push among them) DISCARDS everything before a
+      // drive-relative component, so the write lands outside the mod folder.
+      // Linux and macOS both allow ":" in a filename, so a theme authored
+      // there carries the segment through. Reserved DOS device names go for
+      // the same reason: "CON" and "LPT1" name devices, not files.
+      //
+      // The native loader must check again on its own side; this is the
+      // first of two gates. Both regexes stay inside the body because the
+      // test harness evaluates this function alone.
+      function isSafeRelPath(rel) {
+        if (typeof rel !== "string" || !rel) return false;
+        if (rel.indexOf("\\") !== -1) return false;
+        const illegal = /[<>:"|?*\x00-\x1f]/;
+        const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+        const parts = rel.split("/");
+        for (let i = 0; i < parts.length; i++) {
+          const p = parts[i];
+          if (p === "" || p === "." || p === "..") return false;
+          if (illegal.test(p)) return false;
+          if (reserved.test(p)) return false;
+          // Windows strips a trailing space or dot, so two distinct entries
+          // can collide into one file on extraction.
+          if (/[ .]$/.test(p)) return false;
+        }
+        return true;
+      }
+
+      // Metadata form: wiring, gating and getMeta().
+
+      const META_VALIDATORS = [
+        ["meta-id", validateId],
+        ["meta-name", validateName],
+        ["meta-version", validateVersion],
+        ["meta-description", validateDescription],
+        ["meta-update-github", validateGithub],
+        ["meta-update-manifest", validateManifestUrl],
+      ];
+
+      function showFieldError(fieldId, msg) {
+        const $err = document.getElementById(fieldId + "-error");
+        if ($err) $err.textContent = msg || "";
+      }
+
+      // Per field, on blur. The submit-time pass is validateMetaForm()
+      // below, which getMeta() runs for itself.
+      META_VALIDATORS.forEach(function (pair) {
+        const fieldId = pair[0];
+        const validator = pair[1];
+        const $el = document.getElementById(fieldId);
+        $el.addEventListener("blur", function () {
+          showFieldError(fieldId, validator($el.value.trim()));
+        });
+      });
+
+      document
+        .getElementById("meta-saves-shared")
+        .addEventListener("change", updateSavesHint);
+      document
+        .getElementById("meta-saves-isolated")
+        .addEventListener("change", updateSavesHint);
+      function updateSavesHint() {
+        document.getElementById("meta-saves-shared-hint").hidden =
+          !document.getElementById("meta-saves-shared").checked;
+      }
+
+      // getMeta().icon must be the raw PNG bytes ModPackage.build expects,
+      // never a File or a data URL, so whatever the modder picks is decoded
+      // and re-encoded as PNG once, on selection. _iconDataUrl is only for
+      // this page's own <img> and the preview stub.
+      let _iconBytes = null;
+      let _iconDataUrl = null;
+      let _iconValid = true;
+      // Whether the held icon is the bundled default, and whether the field
+      // has been touched at all. The second settles the race between the
+      // default icon's fetch and a modder who picks or clears before it
+      // lands: whatever they did wins.
+      let _iconIsDefault = false;
+      let _iconTouched = false;
+
+      // The page's own favicon, downscaled: a mod built without touching
+      // the field still shows a real image on the installer screen.
+      const DEFAULT_ICON_URL = "favicon.png";
+      const DEFAULT_ICON_MAX = 256;
+
+      function bytesToBase64(bytes) {
+        let binary = "";
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode.apply(
+            null,
+            bytes.subarray(i, i + chunkSize),
+          );
+        }
+        return btoa(binary);
+      }
+
+      // png/jpeg/webp in, real PNG bytes out: ModPackage.build wants PNG and
+      // nothing downstream re-encodes. maxSize applies only to the bundled
+      // default; a picked file keeps its own dimensions.
+      async function encodeIconPng(blob, maxSize) {
+        const bitmap = await createImageBitmap(blob);
+        let w = bitmap.width;
+        let h = bitmap.height;
+        if (maxSize && (w > maxSize || h > maxSize)) {
+          const k = maxSize / Math.max(w, h);
+          w = Math.max(1, Math.round(w * k));
+          h = Math.max(1, Math.round(h * k));
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext("2d").drawImage(bitmap, 0, 0, w, h);
+        const png = await new Promise(function (resolve) {
+          canvas.toBlob(resolve, "image/png");
+        });
+        if (!png) throw new Error("PNG encoding failed.");
+        return new Uint8Array(await png.arrayBuffer());
+      }
+
+      function renderIconPreview() {
+        const $preview = document.getElementById("icon-preview");
+        if (!_iconDataUrl) {
+          $preview.hidden = true;
+          return;
+        }
+        document.getElementById("icon-preview-img").src = _iconDataUrl;
+        document.getElementById("icon-preview-text").textContent =
+          _iconIsDefault
+            ? "The default icon. Pick a file to use your own, or remove it."
+            : "Saved as a PNG whichever format you pick.";
+        $preview.hidden = false;
+      }
+
+      function clearIcon() {
+        _iconBytes = null;
+        _iconDataUrl = null;
+        _iconValid = true;
+        _iconIsDefault = false;
+        renderIconPreview();
+      }
+
+      async function onIconChange() {
+        _iconTouched = true;
+        const file = document.getElementById("meta-icon").files[0];
+        showFieldError("meta-icon", "");
+        if (!file) {
+          clearIcon();
+          return;
+        }
+        try {
+          _iconBytes = await encodeIconPng(file, 0);
+          _iconDataUrl = "data:image/png;base64," + bytesToBase64(_iconBytes);
+          _iconValid = true;
+          _iconIsDefault = false;
+          renderIconPreview();
+        } catch (e) {
+          _iconBytes = null;
+          _iconDataUrl = null;
+          _iconValid = false;
+          _iconIsDefault = false;
+          renderIconPreview();
+          showFieldError(
+            "meta-icon",
+            "That file is not an image this browser can decode.",
+          );
+        }
+      }
+
+      document
+        .getElementById("meta-icon")
+        .addEventListener("change", function () {
+          onIconChange().then(reloadPreview);
+        });
+
+      document
+        .getElementById("icon-remove-btn")
+        .addEventListener("click", function () {
+          _iconTouched = true;
+          document.getElementById("meta-icon").value = "";
+          showFieldError("meta-icon", "");
+          clearIcon();
+          reloadPreview();
+        });
+
+      (async function loadDefaultIcon() {
+        try {
+          const r = await fetch(DEFAULT_ICON_URL);
+          if (!r.ok) return;
+          const bytes = await encodeIconPng(await r.blob(), DEFAULT_ICON_MAX);
+          if (_iconTouched) return;
+          _iconBytes = bytes;
+          _iconDataUrl = "data:image/png;base64," + bytesToBase64(bytes);
+          _iconValid = true;
+          _iconIsDefault = true;
+          renderIconPreview();
+          reloadPreview();
+        } catch (e) {
+          // No default available (offline before the shell cached it, or no
+          // createImageBitmap). An empty field is a valid state.
+        }
+      })();
+
+      // Every validator, every error painted, so a field never touched is
+      // still flagged on submit rather than only on blur.
+      function validateMetaForm() {
+        let ok = true;
+        META_VALIDATORS.forEach(function (pair) {
+          const fieldId = pair[0];
+          const validator = pair[1];
+          const $el = document.getElementById(fieldId);
+          const err = validator($el.value.trim());
+          showFieldError(fieldId, err);
+          if (err) ok = false;
+        });
+        if (!_iconValid) {
+          showFieldError(
+            "meta-icon",
+            "That file is not an image this browser can decode.",
+          );
+          ok = false;
+        }
+        return ok;
+      }
+
+      // Validation gates rather than decorates: null on any failure, with
+      // the errors already painted. A caller treats null as "stop", and
+      // never inspects the returned object for problems itself.
+      function getMeta() {
+        if (!validateMetaForm()) return null;
+
+        const github = document
+          .getElementById("meta-update-github")
+          .value.trim();
+        const manifest = document
+          .getElementById("meta-update-manifest")
+          .value.trim();
+        // An empty update section is null, not an object of empty strings:
+        // ModPackage.build would drop update:{} correctly either way, but
+        // null is the unambiguous "nothing was filled in".
+        let update = null;
+        if (github || manifest) {
+          update = {};
+          if (github) update.github = github;
+          if (manifest) update.manifest = manifest;
+        }
+
+        return {
+          id: document.getElementById("meta-id").value.trim(),
+          name: document.getElementById("meta-name").value.trim(),
+          author: document.getElementById("meta-author").value.trim(),
+          version: document.getElementById("meta-version").value.trim(),
+          description: document.getElementById("meta-description").value.trim(),
+          icon: _iconBytes,
+          saves: document.querySelector('input[name="meta-saves"]:checked')
+            .value,
+          update: update,
+        };
+      }
+
+      // Customize: presets, advanced editors, live preview.
+      //
+      // A preset is a stylesheet, not a separate theme: they all ship the
+      // same index.html and theme.js, so switching between them cannot break
+      // the wiring between the markup and the loader functions theme.js
+      // calls. Advanced mode opens all three files and the preview rebuilds
+      // from the editors, so a hand-written theme previews the same way.
+      //
+      // They are inline rather than fetched: a preset has to render the
+      // instant it is clicked, and a fetch buys a loading state and a
+      // failure mode for nothing.
+
+      const THEME_HTML = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Mod Loader</title>
+    <link rel="stylesheet" href="theme.css" />
+  </head>
+  <body>
+    <main>
+      <img id="icon" alt="" />
+      <h1 id="name">Mod</h1>
+      <p id="version"></p>
+      <p id="status">Looking for your game...</p>
+      <div id="actions">
+        <button id="install">Install</button>
+        <button id="launch">Play</button>
+        <button id="uninstall">Uninstall</button>
+        <button id="choose">Choose the game folder</button>
+      </div>
+      <progress id="progress" max="100" value="0" hidden></progress>
+    </main>
+    <script src="theme.js"><\/script>
+  </body>
+</html>
+`;
+
+      const THEME_JS = `/* Every capitalised function called below is provided by the mod loader
+ * and is available anywhere in your theme. The full list sits under the
+ * editor on the page that generated this file. */
+"use strict";
+
+var $ = function (id) { return document.getElementById(id); };
+
+async function refresh() {
+  var game = await FindGame();
+  var mods = await ListMods();
+  var me = mods.filter(function (m) { return m.isSelf; })[0];
+  $("name").textContent = me ? me.name : "Mod";
+  $("version").textContent = me ? "v" + me.version : "";
+  if (me && me.icon) $("icon").src = me.icon;
+  $("icon").hidden = !(me && me.icon);
+
+  var found = !!game;
+  $("choose").hidden = found;
+  $("install").hidden = !found || !!(me && me.installed);
+  $("uninstall").hidden = !found || !(me && me.installed);
+  $("launch").hidden = !found || !(me && me.installed);
+  if (!found) {
+    $("status").textContent =
+      "I could not find your copy of the game. Show me the folder it is in.";
+    return;
+  }
+  if (me && me.installed) {
+    $("status").textContent = "Installed and ready to play.";
+    return;
+  }
+  // Where it goes is the one thing worth changing at this moment, so the line
+  // that says it is ready is the line that offers to change it. The inline
+  // style is deliberate: this link is created by script and has to look like a
+  // link in a theme whose stylesheet never heard of it.
+  $("status").textContent = "Ready to install ";
+  var change = document.createElement("a");
+  change.textContent = "(change folder)";
+  change.style.cssText = "color:inherit;text-decoration:underline;cursor:pointer";
+  change.onclick = async function () { if (await PickGame()) refresh(); };
+  $("status").appendChild(change);
+}
+
+/* The loader reports what it is doing; a message with a total of one is a
+ * phase marker rather than a measurement, and filling the bar to 0% for those
+ * reads as a job stuck at the start. */
+OnProgress(function (p) {
+  var bar = $("progress");
+  bar.hidden = false;
+  if (p.total > 1) bar.value = Math.round(p.done * 100 / p.total);
+  else bar.removeAttribute("value");
+  $("status").textContent = p.message || "Working...";
+});
+
+/* Say something on the very first frame after a click: the loader takes a
+ * moment to open a package, and a button that goes quiet reads as broken. */
+function working(text) {
+  $("status").textContent = text;
+  var bar = $("progress");
+  bar.hidden = false;
+  bar.removeAttribute("value");
+}
+
+/* The loader shows the player what went wrong; putting the page back the way
+ * it was is this theme's job, and it has to happen on the failing path too. */
+$("install").onclick = async function () {
+  working("Installing...");
+  try { await InstallSteam(); } finally { $("progress").hidden = true; refresh(); }
+};
+$("uninstall").onclick = async function () {
+  working("Removing...");
+  try { await UninstallSteam(); } finally { $("progress").hidden = true; refresh(); }
+};
+$("launch").onclick = async function () {
+  working("Getting the game ready...");
+  try {
+    await LaunchGame();
+    $("status").textContent = "The game is starting.";
+  } catch (e) {
+    refresh();
+  } finally {
+    $("progress").hidden = true;
+  }
+};
+$("choose").onclick = async function () { if (await PickGame()) refresh(); };
+
+refresh();
+`;
+
+      const PRESET_CSS = {
+        slate: `/* Edit freely. The loader serves this file from inside the mod package,
+   so anything you link to has to be in the theme folder with it. */
+:root {
+  --bg: #14100f;
+  --fg: #efe6e0;
+  --muted: #a2938c;
+  --accent: #a3232b;
+  --line: #2e2624;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main {
+  width: min(420px, 90vw);
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  text-align: center;
+}
+#icon { width: 96px; height: 96px; border-radius: 12px; object-fit: cover; }
+#icon[hidden] { display: none; }
+h1 { margin: 14px 0 2px; font-size: 22px; }
+#version { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+#status { min-height: 3em; color: var(--muted); }
+#actions { display: flex; gap: 10px; justify-content: center; }
+button {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #1e1917;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button[hidden] { display: none; }
+progress { width: 100%; margin-top: 16px; }
+`,
+        poster: `/* Edit freely. The loader serves this file from inside the mod package,
+   so anything you link to has to be in the theme folder with it. */
+:root {
+  --bg: #0d0b12;
+  --panel: #151220;
+  --fg: #f2eef7;
+  --muted: #9a8fb0;
+  --accent: #c9a227;
+  --line: #241f2e;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(120% 80% at 50% 0%, #1d1730 0%, var(--bg) 70%);
+  color: var(--fg);
+  font: 15px/1.6 "Iowan Old Style", Georgia, serif;
+}
+main {
+  width: min(520px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 28px 34px 26px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+#icon {
+  width: 84px;
+  height: 84px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+}
+#icon[hidden] { display: none; }
+h1 {
+  margin: 18px 0 0;
+  font-size: 30px;
+  font-weight: normal;
+  letter-spacing: 0.01em;
+}
+#version {
+  margin: 4px 0 20px;
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+#status {
+  min-height: 3em;
+  margin: 0 0 22px;
+  padding-left: 14px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+}
+#actions { display: grid; gap: 8px; }
+button {
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+button[hidden] { display: none; }
+progress { width: 100%; margin-top: 18px; }
+`,
+        custom: `/* Nothing is styled yet. The markup in index.html is all
+   there, so start here and the preview follows every keystroke. */
+`,
+        terminal: `/* Edit freely. The loader serves this file from inside the mod package,
+   so anything you link to has to be in the theme folder with it. */
+:root {
+  --bg: #05070a;
+  --fg: #9ef0b0;
+  --muted: #4f7a5b;
+  --accent: #9ef0b0;
+  --line: #12321c;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.7 "Consolas", "Menlo", "DejaVu Sans Mono", monospace;
+}
+main {
+  width: min(560px, 92vw);
+  padding: 24px;
+  border: 1px solid var(--line);
+}
+#icon {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  filter: saturate(0.4) brightness(1.1);
+}
+#icon[hidden] { display: none; }
+h1 { margin: 12px 0 0; font-size: 17px; font-weight: normal; }
+h1::before { content: "> "; color: var(--muted); }
+#version { margin: 0 0 16px; color: var(--muted); font-size: 12px; }
+#status {
+  min-height: 3em;
+  margin: 0 0 18px;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+#status::before { content: "# "; }
+#actions { display: flex; gap: 8px; flex-wrap: wrap; }
+button {
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+button::before { content: "["; color: var(--muted); }
+button::after { content: "]"; color: var(--muted); }
+button:hover { border-color: var(--accent); background: #0b1a10; }
+button[hidden] { display: none; }
+progress { width: 100%; margin-top: 16px; accent-color: var(--accent); }
+`,
+        dossier: `/* Edit freely. The loader serves this file from inside the mod package,
+   so anything you link to has to be in the theme folder with it. */
+:root {
+  --paper: #e8e1d1;
+  --sheet: #f3eee1;
+  --ink: #21201c;
+  --muted: #6d6659;
+  --accent: #b03a2e;
+  --line: #c2b9a4;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.6 "Palatino Linotype", Palatino, Georgia, serif;
+}
+/* The icon sits beside the name instead of above it, so the sheet reads
+   top to bottom as one column of writing with a photo clipped to it. */
+main {
+  width: min(560px, 94vw);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "name icon"
+    "vers icon"
+    "note note"
+    "acts acts"
+    "prog prog";
+  column-gap: 22px;
+  padding: 30px 32px 28px;
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 40px rgba(33, 32, 28, 0.18);
+}
+#icon {
+  grid-area: icon;
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  filter: grayscale(1) contrast(1.08);
+}
+#icon[hidden] { display: none; }
+h1 { grid-area: name; margin: 0; font-size: 27px; font-weight: normal; }
+#version {
+  grid-area: vers;
+  align-self: start;
+  justify-self: start;
+  margin: 10px 0 0;
+  padding: 3px 9px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: "Courier New", monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+/* Ruled writing lines, one per line of text and none under a line that was
+   never written: the gradient period and the line-height are the same number
+   on purpose, and the box is only as tall as what it holds. */
+#status {
+  grid-area: note;
+  margin: 22px 0 20px;
+  line-height: 26px;
+  color: var(--muted);
+  background: repeating-linear-gradient(
+    to bottom, transparent 0 25px, var(--line) 25px 26px);
+}
+#actions { grid-area: acts; display: flex; gap: 10px; flex-wrap: wrap; }
+button {
+  flex: 1 1 auto;
+  padding: 11px 18px;
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+button:hover { background: var(--ink); color: var(--sheet); }
+button[hidden] { display: none; }
+#install:hover, #launch:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--sheet);
+}
+progress {
+  grid-area: prog;
+  width: 100%;
+  margin-top: 18px;
+  accent-color: var(--accent);
+}
+`,
+        marquee: `/* Edit freely. The loader serves this file from inside the mod package,
+   so anything you link to has to be in the theme folder with it. */
+:root {
+  --bg: #0a0a0c;
+  --fg: #f4f1ec;
+  --muted: #8c8781;
+  --accent: #f0b429;
+  --line: #23232a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.6 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+}
+/* No card: the icon is a full-height panel down one edge and everything
+   else is a rail beside it. The two empty rows keep that rail centred
+   while the panel still spans the whole window. With no icon the first
+   column collapses and only the gap is left. */
+main {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 1fr auto auto auto auto auto 1fr;
+  grid-template-areas:
+    "art ."
+    "art name"
+    "art vers"
+    "art note"
+    "art acts"
+    "art prog"
+    "art .";
+  column-gap: 44px;
+  padding-right: 48px;
+}
+#icon {
+  grid-area: art;
+  width: min(300px, 36vw);
+  height: 100%;
+  object-fit: cover;
+  border-right: 1px solid var(--line);
+}
+#icon[hidden] { display: none; }
+h1 {
+  grid-area: name;
+  margin: 0;
+  font-family: "Haettenschweiler", "Franklin Gothic Medium", "Arial Narrow",
+    Impact, sans-serif;
+  font-size: 46px;
+  font-weight: normal;
+  line-height: 1.04;
+  text-transform: uppercase;
+}
+/* A row of bulbs over the title, the way a marquee is lit. */
+h1::before {
+  content: "";
+  display: block;
+  height: 6px;
+  margin-bottom: 18px;
+  background: radial-gradient(circle, var(--accent) 0 2px, transparent 2px)
+    repeat-x;
+  background-size: 15px 6px;
+}
+#version {
+  grid-area: vers;
+  margin: 10px 0 0;
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+#status {
+  grid-area: note;
+  min-height: 3em;
+  margin: 20px 0 22px;
+  max-width: 42ch;
+  color: var(--muted);
+}
+#actions { grid-area: acts; display: flex; gap: 10px; flex-wrap: wrap; }
+button {
+  padding: 11px 20px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s, color 0.18s;
+}
+button:hover { border-color: var(--fg); }
+button[hidden] { display: none; }
+#install, #launch { background: var(--accent); border-color: var(--accent); color: #17130a; }
+#install:hover, #launch:hover { background: #ffc74d; border-color: #ffc74d; }
+progress {
+  grid-area: prog;
+  width: min(100%, 42ch);
+  margin-top: 20px;
+  accent-color: var(--accent);
+}
+`,
+        static: `/* Edit freely. The loader serves this file from inside the mod package,
+   so anything you link to has to be in the theme folder with it. */
+:root {
+  --bg: #08060a;
+  --fg: #ece7f2;
+  --muted: #7d738e;
+  --accent: #ff2f87;
+  --cyan: #39e6ff;
+  --line: #241b2d;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(90% 70% at 50% 38%, #171021 0%, var(--bg) 75%);
+  color: var(--fg);
+  font: 14px/1.7 "Consolas", "Menlo", "DejaVu Sans Mono", monospace;
+}
+/* Scanlines over everything, including the icon. Fixed rather than on
+   main, so the whole window is behind the same glass. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom, rgba(0, 0, 0, 0.3) 0 1px, transparent 1px 3px);
+}
+main {
+  width: min(540px, 92vw);
+  padding: 30px 30px 26px;
+  border: 1px solid var(--line);
+  background: rgba(8, 6, 10, 0.7);
+}
+#icon {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+}
+#icon[hidden] { display: none; }
+/* The title is the one loud thing: the same word printed three times,
+   a hair out of register. */
+h1 {
+  margin: 18px 0 0;
+  font-size: 28px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-shadow: 2px 0 0 var(--cyan), -2px 0 0 var(--accent);
+}
+#version {
+  margin: 12px 0 18px;
+  color: var(--cyan);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+#version:not(:empty)::before { content: "REC "; color: var(--accent); }
+#status {
+  min-height: 3em;
+  margin: 0 0 20px;
+  padding-left: 14px;
+  border-left: 2px solid var(--accent);
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+#actions { display: flex; gap: 8px; flex-wrap: wrap; }
+button {
+  flex: 1 1 auto;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  background: #100b16;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+button[hidden] { display: none; }
+progress { width: 100%; margin-top: 18px; accent-color: var(--accent); }
+`,
+        backdrop: `/* Edit freely. The loader serves this file from inside the mod package,
+   so anything you link to has to be in the theme folder with it. */
+
+/* This theme has no colour of its own on purpose: your icon fills the
+   window, so the art is the palette and everything here is neutral. If
+   your mod has no icon the scrim is still a clean dark ground. */
+:root {
+  --bg: #0a0809;
+  --fg: #f6f3f0;
+  --muted: #b6afab;
+  --line: rgba(246, 243, 240, 0.28);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.6 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+}
+main {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  align-content: end;
+  justify-items: start;
+  padding: 0 56px 44px;
+}
+/* The icon is the page, not an element on it. */
+#icon {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+#icon[hidden] { display: none; }
+/* One tall scrim doing all the legibility work, heaviest under the text. */
+main::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    to top,
+    var(--bg) 0%,
+    rgba(10, 8, 9, 0.88) 32%,
+    rgba(10, 8, 9, 0.3) 62%,
+    rgba(10, 8, 9, 0.5) 100%);
+}
+h1, #version, #status, #actions, progress { position: relative; z-index: 2; }
+h1 {
+  margin: 0;
+  max-width: 18ch;
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.7);
+}
+#version {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+}
+#status {
+  min-height: 3em;
+  margin: 14px 0 22px;
+  max-width: min(52ch, 100%);
+  color: var(--muted);
+}
+#actions { display: flex; gap: 10px; flex-wrap: wrap; }
+button {
+  padding: 12px 22px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: rgba(246, 243, 240, 0.08);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: background 0.18s, border-color 0.18s;
+}
+button:hover { background: rgba(246, 243, 240, 0.18); border-color: var(--fg); }
+button[hidden] { display: none; }
+#install, #launch {
+  background: var(--fg);
+  border-color: var(--fg);
+  color: #14100f;
+  font-weight: 600;
+}
+#install:hover, #launch:hover { background: #ffffff; border-color: #ffffff; }
+progress {
+  width: min(360px, 100%);
+  margin-top: 20px;
+  accent-color: var(--fg);
+}
+`,
+      };
+
+      const PRESETS = [
+        {
+          id: "slate",
+          label: "Slate",
+          blurb: "A dark card centred in the window.",
+          swatch: ["#14100f", "#a3232b", "#efe6e0"],
+        },
+        {
+          id: "poster",
+          label: "Poster",
+          blurb: "Serif, gold rule, buttons stacked full width.",
+          swatch: ["#0d0b12", "#c9a227", "#f2eef7"],
+        },
+        {
+          id: "terminal",
+          label: "Terminal",
+          blurb: "Monospace, green on black.",
+          swatch: ["#05070a", "#12321c", "#9ef0b0"],
+        },
+        {
+          id: "dossier",
+          label: "Dossier",
+          blurb: "The light one. Ink on paper, ruled lines, a red stamp.",
+          swatch: ["#e8e1d1", "#b03a2e", "#21201c"],
+        },
+        {
+          id: "marquee",
+          label: "Marquee",
+          blurb: "Cover art down one edge, everything else beside it.",
+          swatch: ["#0a0a0c", "#f0b429", "#f4f1ec"],
+        },
+        {
+          id: "static",
+          label: "Static",
+          blurb: "Late-night broadcast: scanlines and a title out of register.",
+          swatch: ["#08060a", "#ff2f87", "#39e6ff"],
+        },
+        {
+          id: "backdrop",
+          label: "Backdrop",
+          blurb: "Your icon fills the window and the words sit over it.",
+          swatch: ["#0a0809", "#f6f3f0", "#b6afab"],
+        },
+        {
+          id: "custom",
+          label: "Custom",
+          blurb: "Start from a blank stylesheet and write the screen yourself.",
+          // No swatch: three colour bands would read as "a theme in these
+          // colours", and this one has none.
+          swatch: null,
+        },
+      ];
+
+      // rel path (no "theme/" prefix) -> Uint8Array, rebuilt by
+      // syncThemeMap(). getTheme() and the preview both read it, so the
+      // preview cannot show something the package would not contain.
+      let _themeMap = new Map();
+
+      const _themeEnc = new TextEncoder();
+      let _presetId = "backdrop";
+      let _editorFile = "html";
+      let _previewTimer = 0;
+      // presetId -> { html, css, js }. Edits are kept per preset, so
+      // clicking through them to compare never throws work away. No entry
+      // means untouched, which is what "Undo my edits" removes and what
+      // decides whether that button shows at all.
+      const _themeEdits = Object.create(null);
+
+      function setThemeStatus(msg, kind) {
+        const $el = document.getElementById("theme-status");
+        $el.textContent = msg || "";
+        $el.className = "row-status" + (kind ? " " + kind : "");
+      }
+
+      function presetDefaults(id) {
+        return { html: THEME_HTML, css: PRESET_CSS[id] || "", js: THEME_JS };
+      }
+
+      function currentThemeFiles() {
+        return _themeEdits[_presetId] || presetDefaults(_presetId);
+      }
+
+      function isPresetEdited() {
+        return Object.prototype.hasOwnProperty.call(_themeEdits, _presetId);
+      }
+
+      // One optional file, shipped as theme/music.<ext> and looped by the
+      // installer. Not part of a preset or of _themeEdits: the track belongs
+      // to the mod, so clicking through the looks keeps it.
+      const MUSIC_MAX_BYTES = 8 * 1024 * 1024;
+      const MUSIC_EXT = /\.(mp3|ogg|m4a|wav|flac|opus|webm)$/i;
+      let _musicBytes = null;
+      let _musicExt = "";
+      let _musicLabel = "";
+      let _musicAudio = null;
+
+      function syncThemeMap() {
+        _themeMap = new Map();
+        const f = currentThemeFiles();
+        _themeMap.set("index.html", _themeEnc.encode(f.html));
+        _themeMap.set("theme.css", _themeEnc.encode(f.css));
+        _themeMap.set("theme.js", _themeEnc.encode(f.js));
+        if (_musicBytes) _themeMap.set("music." + _musicExt, _musicBytes);
+      }
+
+      function stopAudition() {
+        if (!_musicAudio) return;
+        _musicAudio.pause();
+        URL.revokeObjectURL(_musicAudio.src);
+        _musicAudio = null;
+        document.getElementById("music-play-btn").textContent = "Listen";
+      }
+
+      function renderMusicRow() {
+        const $row = document.getElementById("music-preview");
+        $row.hidden = !_musicBytes;
+        if (!_musicBytes) return;
+        const kb = _musicBytes.length / 1024;
+        document.getElementById("music-preview-text").textContent =
+          _musicLabel +
+          " (" +
+          (kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : Math.round(kb) + " KB") +
+          ")";
+      }
+
+      function clearMusic() {
+        stopAudition();
+        _musicBytes = null;
+        _musicExt = "";
+        _musicLabel = "";
+        document.getElementById("theme-music").value = "";
+        renderMusicRow();
+        syncThemeMap();
+      }
+
+      document
+        .getElementById("theme-music")
+        .addEventListener("change", async function () {
+          const file = this.files[0];
+          showFieldError("theme-music", "");
+          if (!file) {
+            clearMusic();
+            return;
+          }
+          const m = MUSIC_EXT.exec(file.name);
+          if (!m) {
+            clearMusic();
+            showFieldError(
+              "theme-music",
+              "Pick an .mp3, .ogg, .m4a, .opus, .wav, .flac or .webm file.",
+            );
+            return;
+          }
+          if (file.size > MUSIC_MAX_BYTES) {
+            clearMusic();
+            showFieldError(
+              "theme-music",
+              "That track is " +
+                (file.size / (1024 * 1024)).toFixed(1) +
+                " MB. Keep it under 8 MB: it is carried by every copy of the " +
+                "installer people download.",
+            );
+            return;
+          }
+          stopAudition();
+          _musicBytes = new Uint8Array(await file.arrayBuffer());
+          _musicExt = m[1].toLowerCase();
+          _musicLabel = file.name;
+          renderMusicRow();
+          syncThemeMap();
+        });
+
+      document
+        .getElementById("music-remove-btn")
+        .addEventListener("click", function () {
+          clearMusic();
+        });
+
+      // Auditioned here, not in the preview: that reloads on every
+      // keystroke, and a track restarting each time is unusable.
+      document
+        .getElementById("music-play-btn")
+        .addEventListener("click", function () {
+          if (_musicAudio) {
+            stopAudition();
+            return;
+          }
+          if (!_musicBytes) return;
+          const url = URL.createObjectURL(
+            new Blob([_musicBytes], { type: "audio/" + _musicExt }),
+          );
+          _musicAudio = new Audio(url);
+          _musicAudio.loop = true;
+          _musicAudio.volume = 0.45;
+          _musicAudio.addEventListener("error", function () {
+            stopAudition();
+            showFieldError(
+              "theme-music",
+              "This browser cannot play that file, so players may not be able to either.",
+            );
+          });
+          _musicAudio.play().then(
+            function () {
+              this.textContent = "Stop";
+            }.bind(this),
+            function () {
+              stopAudition();
+            },
+          );
+        });
+
+      function renderPresetGrid() {
+        // Rendered once; selection only flips aria-pressed. Nothing rebuilds
+        // the element under the pointer, so focus stays put.
+        document.getElementById("preset-grid").innerHTML = PRESETS.map(
+          function (p) {
+            return (
+              '<button type="button" class="preset-card" data-preset="' +
+              escapeHtml(p.id) +
+              '" aria-pressed="false"><span class="preset-swatch' +
+              (p.swatch ? "" : " blank") +
+              '" aria-hidden="true">' +
+              (p.swatch || [])
+                .map(function (c) {
+                  return (
+                    '<span style="background:' + escapeHtml(c) + '"></span>'
+                  );
+                })
+                .join("") +
+              "</span><b>" +
+              escapeHtml(p.label) +
+              "</b><small>" +
+              escapeHtml(p.blurb) +
+              "</small></button>"
+            );
+          },
+        ).join("");
+      }
+
+      function updateCustomizeChrome() {
+        document.getElementById("theme-reset-btn").hidden = !isPresetEdited();
+      }
+
+      // Custom starts from a blank stylesheet, so opening the editors is
+      // what picking it means. Every other preset is usable without seeing
+      // code, so selecting one leaves the disclosure as it was.
+      function setAdvancedOpen(open) {
+        document
+          .getElementById("theme-advanced-toggle")
+          .setAttribute("aria-expanded", String(open));
+        document.getElementById("advanced").hidden = !open;
+        if (open && _cm) _cm.refresh();
+      }
+
+      function selectPreset(id) {
+        _presetId = id;
+        Array.prototype.forEach.call(
+          document.querySelectorAll("#preset-grid .preset-card"),
+          function ($card) {
+            $card.setAttribute(
+              "aria-pressed",
+              String($card.dataset.preset === id),
+            );
+          },
+        );
+        syncThemeMap();
+        renderEditor();
+        updateCustomizeChrome();
+        if (id === "custom") setAdvancedOpen(true);
+        setThemeStatus(
+          isPresetEdited() ? "Showing your edited copy of this preset." : "",
+          "",
+        );
+        reloadPreview();
+      }
+
+      // CodeMirror (vendored at app/js/libs/codemirror.js) over the plain
+      // <textarea>, which stays as the fallback if that script fails to
+      // load. Every read goes through editorValue(), so both paths behave
+      // identically.
+      const CM_MODE = { html: "htmlmixed", css: "css", js: "javascript" };
+      let _cm = null;
+
+      function editorValue() {
+        return _cm ? _cm.getValue() : document.getElementById("editor").value;
+      }
+
+      function initEditor() {
+        const $ta = document.getElementById("editor");
+        if (typeof CodeMirror !== "function") {
+          $ta.addEventListener("input", onEditorInput);
+          return;
+        }
+        document.getElementById("editor-host").classList.remove("plain");
+        _cm = CodeMirror.fromTextArea($ta, {
+          mode: CM_MODE[_editorFile],
+          theme: "tcoaal-dark",
+          lineNumbers: true,
+          indentUnit: 2,
+          tabSize: 2,
+          autoCloseBrackets: true,
+          matchBrackets: true,
+        });
+        _cm.on("change", function (_ed, change) {
+          // renderEditor()'s own setValue must not read back as an edit, or
+          // switching tabs would mark the preset edited.
+          if (change.origin === "setValue") return;
+          onEditorInput();
+        });
+      }
+
+      function renderEditor() {
+        const src = currentThemeFiles()[_editorFile];
+        if (!_cm) {
+          document.getElementById("editor").value = src;
+          return;
+        }
+        if (_cm.getValue() !== src) _cm.setValue(src);
+        _cm.setOption("mode", CM_MODE[_editorFile]);
+        // CodeMirror measures against layout and is created while the pane
+        // is still behind the gate with Advanced closed, both display:none.
+        // Without a refresh once it has a box it renders as an empty strip.
+        setTimeout(function () {
+          if (_cm) _cm.refresh();
+        }, 0);
+      }
+
+      function selectEditorFile(which) {
+        _editorFile = which;
+        Array.prototype.forEach.call(
+          document.querySelectorAll(".editor-tab"),
+          function ($tab) {
+            $tab.setAttribute(
+              "aria-selected",
+              String($tab.dataset.file === which),
+            );
+          },
+        );
+        renderEditor();
+      }
+
+      // Short enough to read as live typing, long enough that a burst of
+      // keystrokes is one iframe navigation.
+      const PREVIEW_DEBOUNCE_MS = 120;
+
+      function schedulePreview() {
+        clearTimeout(_previewTimer);
+        _previewTimer = setTimeout(reloadPreview, PREVIEW_DEBOUNCE_MS);
+      }
+
+      function onEditorInput() {
+        const base = currentThemeFiles();
+        const next = { html: base.html, css: base.css, js: base.js };
+        next[_editorFile] = editorValue();
+        _themeEdits[_presetId] = next;
+        syncThemeMap();
+        updateCustomizeChrome();
+        setThemeStatus("Edited. Undo my edits puts the preset back.", "");
+        schedulePreview();
+      }
+
+      function resetPreset() {
+        delete _themeEdits[_presetId];
+        syncThemeMap();
+        renderEditor();
+        updateCustomizeChrome();
+        setThemeStatus("", "");
+        reloadPreview();
+      }
+
+      function toggleAdvanced() {
+        const open =
+          document
+            .getElementById("theme-advanced-toggle")
+            .getAttribute("aria-expanded") !== "true";
+        setAdvancedOpen(open);
+      }
+
+      async function downloadThemeZip() {
+        if (_themeMap.size === 0) return;
+        const entries = [];
+        _themeMap.forEach(function (data, name) {
+          entries.push({ name: name, data: data });
+        });
+        const zipBytes = await ModPackage.writeZip(entries);
+        const blob = new Blob([zipBytes], { type: "application/zip" });
+        const url = URL.createObjectURL(blob);
+        const $a = document.createElement("a");
+        $a.href = url;
+        $a.download = "theme.zip";
+        document.body.appendChild($a);
+        $a.click();
+        $a.remove();
+        setTimeout(function () {
+          URL.revokeObjectURL(url);
+        }, 1000);
+      }
+
+      document
+        .getElementById("preset-grid")
+        .addEventListener("click", function (e) {
+          const $card = e.target.closest(".preset-card");
+          if ($card) selectPreset($card.dataset.preset);
+        });
+      document
+        .querySelector(".editor-tabs")
+        .addEventListener("click", function (e) {
+          const $tab = e.target.closest(".editor-tab");
+          if ($tab) selectEditorFile($tab.dataset.file);
+        });
+      document
+        .getElementById("theme-advanced-toggle")
+        .addEventListener("click", toggleAdvanced);
+      document
+        .getElementById("theme-reset-btn")
+        .addEventListener("click", resetPreset);
+      document
+        .getElementById("theme-download-btn")
+        .addEventListener("click", function () {
+          downloadThemeZip().catch(function (e) {
+            setThemeStatus(
+              "Could not build the ZIP: " + ((e && e.message) || e),
+              "err",
+            );
+          });
+        });
+
+      // The preview renders the real name, version and icon. The icon's own
+      // change handler calls reloadPreview; the two text fields are typed
+      // into, so they take the editors' debounce.
+      ["meta-name", "meta-version"].forEach(function (id) {
+        document.getElementById(id).addEventListener("input", schedulePreview);
+      });
+
+      // The "theme/" prefix is applied here, once, as the names leave this
+      // page and become ZIP entries and then paths on a player's disk.
+      // syncThemeMap() is _themeMap's only writer and sets three fixed
+      // names, so nothing here can carry ".." today; the check stays so that
+      // stays a property of this function rather than of its caller.
+      function getTheme() {
+        const out = [];
+        _themeMap.forEach(function (data, rel) {
+          if (!isSafeRelPath(rel)) return;
+          out.push({ name: "theme/" + rel, data: data });
+        });
+        return out;
+      }
+
+      // Live preview: sandboxed iframe, no allow-same-origin.
+      //
+      // A theme is arbitrary script and this page holds IndexedDB handles to
+      // the player's imported game, so the iframe is sandbox="allow-scripts"
+      // with NO allow-same-origin, fed through .srcdoc and never through
+      // innerHTML into this document. That gives the theme a uniquely opaque
+      // origin: it can run script but cannot read this page's IndexedDB,
+      // localStorage or cookies, or reach window.parent's document. The
+      // isolation is the platform's, not a convention this code maintains by
+      // being careful.
+
+      function localThemeRel(src) {
+        if (!src) return null;
+        if (/^([a-z][a-z0-9+.-]*:)?\/\//i.test(src)) return null; // absolute / protocol-relative
+        if (src.charAt(0) === "/" || src.indexOf("data:") === 0) return null;
+        return src.replace(/^\.\//, "");
+      }
+
+      function buildPreviewSrcdoc() {
+        // Exactly the set the package will contain.
+        const files = _themeMap;
+        const idxBytes = files.get("index.html");
+        if (!idxBytes) return null;
+
+        const name = document.getElementById("meta-name").value.trim() || "Mod";
+        const version =
+          document.getElementById("meta-version").value.trim() || "0.0.0";
+        const iconDataUrl = _iconDataUrl || null;
+
+        const PREVIEW_STUB = `
+          const _mods = [{ id: "preview", name: ${JSON.stringify(name)},
+            version: ${JSON.stringify(version)}, icon: ${JSON.stringify(iconDataUrl)},
+            installed: false, enabled: true, isSelf: true }];
+          const _game = { root: "C:\\\\Steam\\\\steamapps\\\\common\\\\The Coffin of Andy and Leyley",
+            gamePath: "C:\\\\Steam\\\\steamapps\\\\common\\\\The Coffin of Andy and Leyley",
+            version: "30800", buildid: "30800", mods: [] };
+          window.FindGame = async () => _game;
+          window.FindSteam = async () => _game;
+          window.PickGame = async () => _game;
+          window.ListMods = async () => _mods;
+          window.IsLoaderInstalled = async () => false;
+          window.InstallLoader = async () => { };
+          window.InstallSteam = async () => { _mods[0].installed = true; };
+          window.UninstallSteam = async () => { _mods[0].installed = false; };
+          window.EnableMod = async () => { };
+          window.SetLoadOrder = async () => { };
+          window.LaunchGame = async () => { };
+          window.CheckUpdate = async () => null;
+          window.ApplyUpdate = async () => { };
+          window.OpenGameFolder = async () => { };
+          window.OnProgress = (cb) => { window.__progress = cb; };
+          // The real app plays the track here. The preview stays quiet: it
+          // reloads on every keystroke, and Listen is where it is auditioned.
+          window.HasMusic = () => false;
+          window.PlayMusic = () => { };
+          window.StopMusic = () => { };
+          window.ToggleMusic = () => { };
+        `;
+
+        const doc = new DOMParser().parseFromString(
+          new TextDecoder().decode(idxBytes),
+          "text/html",
+        );
+
+        Array.prototype.slice
+          .call(doc.querySelectorAll("link[rel=stylesheet][href]"))
+          .forEach(function (el) {
+            const rel = localThemeRel(el.getAttribute("href"));
+            const data = rel !== null ? files.get(rel) : undefined;
+            if (data === undefined) return;
+            const $style = doc.createElement("style");
+            $style.textContent = new TextDecoder().decode(data);
+            el.replaceWith($style);
+          });
+
+        Array.prototype.slice
+          .call(doc.querySelectorAll("script[src]"))
+          .forEach(function (el) {
+            const rel = localThemeRel(el.getAttribute("src"));
+            const data = rel !== null ? files.get(rel) : undefined;
+            if (data === undefined) return;
+            const $script = doc.createElement("script");
+            $script.textContent = new TextDecoder().decode(data);
+            el.replaceWith($script);
+          });
+
+        const $stub = doc.createElement("script");
+        $stub.textContent = PREVIEW_STUB;
+        const host = doc.head || doc.documentElement;
+        host.insertBefore($stub, host.firstChild);
+
+        return "<!doctype html>\n" + doc.documentElement.outerHTML;
+      }
+
+      // Assigning srcdoc is a navigation, and one that never commits leaves
+      // the iframe showing the previous render with nothing logged anywhere:
+      // the preview just stops following the editors. Each reload arms a
+      // timer the load event clears; if it does not fire, the element is
+      // replaced, which always yields a fresh document. The replacement arms
+      // no timer of its own, so it cannot loop.
+      const PREVIEW_LOAD_TIMEOUT_MS = 2000;
+      let _previewWatchdog = 0;
+
+      // The size tauri.conf.json opens the installer at. The iframe is laid
+      // out at this size and scaled, so keep the two in step.
+      const PREVIEW_WINDOW_W = 820;
+
+      function previewIframe() {
+        return document.getElementById("theme-preview");
+      }
+
+      // CSS gives the wrap the window's aspect ratio, so only the scale
+      // needs measuring. Watching the wrap rather than the window catches the
+      // pane being revealed and the editors opening, neither of which fires
+      // a resize event.
+      (function trackPreviewScale() {
+        const $wrap = document.getElementById("theme-preview-wrap");
+        function apply() {
+          const w = $wrap.clientWidth;
+          if (w > 0) {
+            $wrap.style.setProperty("--preview-scale", w / PREVIEW_WINDOW_W);
+          }
+        }
+        if (typeof ResizeObserver === "function") {
+          new ResizeObserver(apply).observe($wrap);
+        } else {
+          window.addEventListener("resize", apply);
+        }
+        apply();
+      })();
+
+      function bindPreviewLoad($frame) {
+        $frame.addEventListener("load", function () {
+          clearTimeout(_previewWatchdog);
+        });
+      }
+
+      function armPreviewWatchdog() {
+        clearTimeout(_previewWatchdog);
+        _previewWatchdog = setTimeout(function () {
+          const $old = previewIframe();
+          const $new = document.createElement("iframe");
+          $new.id = $old.id;
+          $new.title = $old.title;
+          // Same isolation as the markup: scripts, no same-origin.
+          $new.setAttribute("sandbox", "allow-scripts");
+          const srcdoc = $old.srcdoc;
+          $old.replaceWith($new);
+          bindPreviewLoad($new);
+          $new.srcdoc = srcdoc;
+        }, PREVIEW_LOAD_TIMEOUT_MS);
+      }
+
+      function reloadPreview() {
+        const srcdoc = buildPreviewSrcdoc();
+        if (!srcdoc) {
+          setThemeStatus("This theme has no index.html to preview.", "err");
+          return;
+        }
+        previewIframe().srcdoc = srcdoc;
+        armPreviewWatchdog();
+      }
+
+      // Under the editors rather than behind a disclosure: in advanced mode
+      // these names are the whole interface between a hand-written theme and
+      // the loader.
+      const THEME_API_DOCS = [
+        [
+          "FindGame()",
+          "Find the player's copy of the game, through Steam or the folder they " +
+            "used last. Resolves to { root, version, mods, ... } or null.",
+        ],
+        [
+          "PickGame()",
+          "Ask the player to point at their game folder. Same answer as FindGame().",
+        ],
+        [
+          "FindSteam()",
+          "FindGame() under its older name; its answer also carries .gamePath.",
+        ],
+        [
+          "ListMods()",
+          "List every mod the loader knows about; one entry carries isSelf: true.",
+        ],
+        [
+          "IsLoaderInstalled()",
+          "Whether any mod is set up on this copy of the game yet.",
+        ],
+        [
+          "InstallLoader()",
+          "The same call as InstallSteam(): installing a mod is what sets the " +
+            "loader up. There is no separate loader to install.",
+        ],
+        [
+          "InstallSteam()",
+          "Install this mod into the game's addons/ folder. The game's own files " +
+            "are never written to. In an online installer this call downloads " +
+            "the mod first, reporting the download through OnProgress().",
+        ],
+        ["UninstallSteam(id?)", "Remove this mod, or the one you name."],
+        ["EnableMod(id, on)", "Turn an installed mod on or off without removing it."],
+        ["SetLoadOrder([ids])", "Reorder the installed mods. Later ones win."],
+        ["LaunchGame()", "Start the game with the enabled mods applied."],
+        [
+          "CheckUpdate(id?)",
+          "Check a mod's update source for a newer version.",
+        ],
+        ["ApplyUpdate(id?)", "Download and install an available update."],
+        [
+          "OpenGameFolder()",
+          "Open the game's install folder in the system file browser.",
+        ],
+        [
+          "OnProgress(callback)",
+          "Register callback({ done, total, message }) for progress updates. " +
+            "The app also draws its own bar across the top of the window " +
+            "whenever it is working, so a theme without one is never silent.",
+        ],
+        [
+          "HasMusic()",
+          "Whether this mod ships a background track (the file picked above).",
+        ],
+        [
+          "PlayMusic() / StopMusic() / ToggleMusic()",
+          "Control the track. It loops from the moment the window opens and " +
+            "stops when the game starts; the player has a mute button of " +
+            "their own, and these calls set the same switch.",
+        ],
+      ];
+
+      (function renderThemeApiDocs() {
+        document.getElementById("theme-api-list").innerHTML =
+          THEME_API_DOCS.map(function (pair) {
+            return (
+              "<li><code>" +
+              escapeHtml(pair[0]) +
+              "</code> <span>" +
+              escapeHtml(pair[1]) +
+              "</span></li>"
+            );
+          }).join("");
+      })();
+
+      // Painted now, while the pane is still hidden behind the gate: setting
+      // srcdoc on a hidden iframe is fine, and the preview is then already
+      // there the moment boot() reveals it.
+      bindPreviewLoad(previewIframe());
+      initEditor();
+      renderPresetGrid();
+      selectPreset(_presetId);
+
+      window.__CREATE__.getMeta = getMeta;
+      window.__CREATE__.getTheme = getTheme;
+    </script>
+
+    <!-- PE/.icns/stub tooling for the three stamping buttons. Plain scripts
+         onto the shared window, not worker modules: stamping runs on the main
+         thread and the worker's only job is the diff. -->
+    <script src="js/libs/pe-resources.js"></script>
+    <script src="js/libs/icns.js"></script>
+    <script src="js/libs/stub-stamp.js"></script>
+
+    <script>
+      "use strict";
+
+      /*
+       * Runs the diff worker, packages the .tcoaalmod, and stamps the three
+       * per-OS installer stubs.
+       *
+       * One global scope with the two blocks above, so every top-level name
+       * here is new. Reused rather than redefined: escapeHtml, setStatus,
+       * DB_NAME, STORE and ModPackage.
+       */
+
+      // Pure helpers, run directly by tools/test-create.js. Each is
+      // self-contained: the harness lifts one function's source at a time,
+      // so nothing here may depend on a declaration outside its own body.
+
+      // Built from meta.id and meta.version only, never from free text:
+      // validateId() and validateVersion() have already bounded both to
+      // lowercase letters, digits, dashes and a strict semver, so nothing
+      // reaching this filename still needs sanitising.
+      function modPackageFilename(id, version) {
+        return id + "-" + version + ".tcoaalmod";
+      }
+
+      // The three installer filenames below embed meta.name, and
+      // validateName() bounds only its LENGTH: it is free text that can
+      // still hold a path separator. Replaced with "_" at the filename call
+      // sites only. The product name handed to StubStamp (plain text in a PE
+      // version resource or Info.plist, never a path) keeps the real name.
+      function sanitizeInstallerName(name) {
+        const cleaned = String(name || "")
+          .replace(/[\\/:*?"<>|\x00-\x1f]/g, "_")
+          .trim();
+        return cleaned || "Mod";
+      }
+
+      // One line per variant in the build summary. Assigned through
+      // textContent, never innerHTML, so it must NOT escape its inputs:
+      // escaping text bound for textContent double-encodes it.
+      function buildSummaryLine(label, stats) {
+        return (
+          label +
+          ": " +
+          stats.patched +
+          " patched, " +
+          stats.added +
+          " added, " +
+          stats.replaced +
+          " replaced, " +
+          stats.deleted +
+          " deleted (" +
+          stats.unchanged +
+          " unchanged excluded)"
+        );
+      }
+
+      // The zip fallback has to land on the SAME root the directory picker
+      // does, or every path shifts, the diff sees the whole base game as
+      // newly added, and the package leaks the copyrighted files this tool
+      // exists to keep out.
+      //
+      // The picker hands its handle to ModDiff.dirSource
+      // (app/js/libs/mod-diff-worker.js), which roots at the handle itself
+      // when "data" is directly inside it, and one level into "www"
+      // otherwise. That rule is about ONE directory, because picking a
+      // folder picks the game folder. A zip is not one directory: people zip
+      // the folder that HOLDS the game, so "modname/game/www/data/..." is at
+      // least as common as an archive made from inside www/. So the rule is
+      // applied to every directory in the archive and the shallowest match
+      // wins, which makes dirSource's two shapes its depth-0 cases and a zip
+      // and a folder pick of the same copy resolve identically.
+      //
+      // The first pass wants "data" beside one of the engine's own folders:
+      // without that sibling test an unrelated "docs/data/" higher up would
+      // outrank the real game root for being shallower. Returns the prefix
+      // to strip ("" for a zip already rooted at the game), or null.
+      function findZipGameRoot(names) {
+        // prefix (trailing slash, "" for the archive root) -> the directory
+        // names directly inside it.
+        const children = Object.create(null);
+        for (let i = 0; i < names.length; i++) {
+          const parts = names[i].split("/");
+          let prefix = "";
+          // The last segment is the entry's own name, and for a zip's
+          // directory entries ("audio/") it is empty.
+          for (let j = 0; j < parts.length - 1; j++) {
+            const set =
+              children[prefix] || (children[prefix] = Object.create(null));
+            set[parts[j]] = true;
+            prefix += parts[j] + "/";
+          }
+        }
+        const prefixes = Object.keys(children).sort(function (a, b) {
+          if (a.length !== b.length) return a.length - b.length;
+          return a < b ? -1 : a > b ? 1 : 0;
+        });
+
+        const SIBLINGS = ["js", "img", "audio", "fonts", "movies", "icon"];
+        function looksLikeGame(set) {
+          if (!set.data) return false;
+          for (let i = 0; i < SIBLINGS.length; i++) {
+            if (set[SIBLINGS[i]]) return true;
+          }
+          return false;
+        }
+
+        let i;
+        for (i = 0; i < prefixes.length; i++) {
+          if (looksLikeGame(children[prefixes[i]])) return prefixes[i];
+        }
+        for (i = 0; i < prefixes.length; i++) {
+          if (children[prefixes[i]].data) return prefixes[i];
+        }
+        for (i = 0; i < prefixes.length; i++) {
+          if (children[prefixes[i]].www) return prefixes[i] + "www/";
+        }
+        return null;
+      }
+
+      // The .zip fallback for browsers with no showDirectoryPicker
+      // (Firefox, Safari).
+
+      // A plain <input type=file> as a promise. A file input has no "cancel"
+      // event, so dismissing the picker never fires "change" and this never
+      // settles: the row is left as it was, like pickModFolder's AbortError.
+      function pickZipFile() {
+        return new Promise(function (resolve) {
+          const $input = document.createElement("input");
+          $input.type = "file";
+          $input.accept = ".zip,application/zip";
+          $input.style.display = "none";
+          document.body.appendChild($input);
+          $input.addEventListener(
+            "change",
+            function () {
+              resolve($input.files && $input.files[0] ? $input.files[0] : null);
+              $input.remove();
+            },
+            { once: true },
+          );
+          $input.click();
+        });
+      }
+
+      async function pickModZip(row) {
+        const file = await pickZipFile();
+        if (!file) return;
+
+        setRowStatus(row, "Reading the .zip...", "");
+        let entries;
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          entries = await ModPackage.readZip(bytes);
+        } catch (e) {
+          setRowStatus(
+            row,
+            "Could not read that .zip: " + ((e && e.message) || e),
+            "err",
+          );
+          return;
+        }
+
+        const names = Array.from(entries.keys());
+        const root = findZipGameRoot(names);
+        if (root === null) {
+          setRowStatus(
+            row,
+            "No game folder in that .zip: nothing inside it holds a data/ " +
+              "or www/ directory.",
+            "err",
+          );
+          return;
+        }
+
+        // Every rel becomes a manifest entry the native loader writes to a
+        // path on a player's disk. A directory handle's entry names can never
+        // hold a separator, but a zip's are whatever the person who built it
+        // put there, so this is the one untrusted way a path enters a package
+        // and it gets the same gate the theme files get. The loader checks
+        // again on its own side: a .tcoaalmod can be hand-crafted.
+        const files = [];
+        const unsafe = [];
+        entries.forEach(function (data, name) {
+          if (name.indexOf(root) !== 0) return;
+          const rel = name.slice(root.length);
+          if (!rel) return;
+          // Directory entries ("audio/") carry no bytes and package nothing.
+          // isSafeRelPath rejects their empty last segment, so drop them
+          // before the check rather than reporting them as unsafe.
+          if (rel.charAt(rel.length - 1) === "/") return;
+          if (!isSafeRelPath(rel)) {
+            unsafe.push(rel);
+            return;
+          }
+          files.push([rel, data]);
+        });
+        if (unsafe.length) {
+          setRowStatus(
+            row,
+            "That .zip contains " +
+              unsafe.length +
+              ' unsafe path(s) and was not used. The first is "' +
+              unsafe[0] +
+              '".',
+            "err",
+          );
+          return;
+        }
+        if (files.length === 0) {
+          setRowStatus(
+            row,
+            "That .zip has nothing left after removing its wrapper folder.",
+            "err",
+          );
+          return;
+        }
+
+        row._files = files;
+        // A row carries a handle OR a file list, never a stale mix of both
+        // from an earlier pick in either direction.
+        row._handle = null;
+        markRowImported(row, file.name);
+        const ready = "Ready: " + files.length + " files from " + file.name;
+        const note = applyGitDiscovery(
+          githubSlugFromGitConfig(findGitConfigInZip(entries)),
+        );
+        setRowStatus(row, note ? ready + ". " + note : ready, "ok");
+      }
+
+      // The build pane's own status line, separate from
+      // window.__CREATE__.setStatus's page-level one.
+      function setBuildStatus(msg, kind) {
+        const $el = document.getElementById("build-status");
+        $el.textContent = msg || "";
+        $el.className = "build-status" + (kind ? " " + kind : "");
+      }
+
+      // One bar per pair, rendered before the worker starts and updated from
+      // its "progress" messages, whose `pair` indexes the array posted to it.
+      function renderBuildProgress(pairs) {
+        const $wrap = document.getElementById("build-progress");
+        $wrap.innerHTML = pairs
+          .map(function (p, i) {
+            return (
+              '<div class="progress-row">' +
+              '<div class="progress-row-label">' +
+              escapeHtml(p.label) +
+              "</div>" +
+              '<div class="bar-track">' +
+              '<div class="bar-fill" id="build-bar-' +
+              i +
+              '"></div>' +
+              "</div>" +
+              "</div>"
+            );
+          })
+          .join("");
+      }
+
+      function updateBuildProgress(pairIndex, done, total) {
+        const $bar = document.getElementById("build-bar-" + pairIndex);
+        if (!$bar) return;
+        const pct =
+          total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 100;
+        $bar.style.width = pct + "%";
+      }
+
+      function clearBuildProgress() {
+        document.getElementById("build-progress").innerHTML = "";
+      }
+
+      function renderBuildSummary(variants) {
+        const $el = document.getElementById("build-summary");
+        $el.innerHTML = "";
+        variants.forEach(function (v) {
+          const $p = document.createElement("p");
+          $p.textContent = buildSummaryLine(v.base.label, v.stats);
+          $el.appendChild($p);
+        });
+      }
+
+      // Object URL -> synthetic <a download> click -> revoke, as
+      // downloadThemeZip does.
+      function download(bytes, filename, mime) {
+        const blob = new Blob([bytes], {
+          type: mime || "application/octet-stream",
+        });
+        const url = URL.createObjectURL(blob);
+        const $a = document.createElement("a");
+        $a.href = url;
+        $a.download = filename;
+        document.body.appendChild($a);
+        $a.click();
+        $a.remove();
+        setTimeout(function () {
+          URL.revokeObjectURL(url);
+        }, 1000);
+      }
+
+      // Step 1: run the diff worker, then ModPackage.build().
+
+      let _worker = null;
+      let _modBytes = null;
+      let _meta = null;
+
+      // Called before a new run starts and from every exit path of
+      // runDiffWorker's message handler, so a second build never leaves the
+      // first running or reporting progress nobody is counting.
+      function terminateWorker() {
+        if (_worker) {
+          _worker.terminate();
+          _worker = null;
+        }
+      }
+
+      function runDiffWorker(pairs) {
+        return new Promise(function (resolve, reject) {
+          const worker = new Worker("js/libs/mod-diff-worker.js");
+          _worker = worker;
+          const msgPairs = pairs.map(function (p) {
+            const out = { baseVerId: p.baseVerId, label: p.label };
+            if (p.modHandle) out.modHandle = p.modHandle;
+            else out.files = p.files;
+            if (p.steam) out.steam = p.steam;
+            return out;
+          });
+          worker.onmessage = function (ev) {
+            const msg = ev.data;
+            if (!msg) return;
+            if (msg.type === "progress") {
+              updateBuildProgress(msg.pair, msg.done, msg.total);
+            } else if (msg.type === "done") {
+              terminateWorker();
+              resolve({ variants: msg.variants, payloads: msg.payloads });
+            } else if (msg.type === "error") {
+              terminateWorker();
+              reject(new Error(msg.message));
+            }
+          };
+          worker.onerror = function (ev) {
+            terminateWorker();
+            reject(
+              new Error((ev && ev.message) || "The build worker crashed."),
+            );
+          };
+          worker.postMessage({
+            cmd: "diff",
+            dbName: DB_NAME,
+            storeName: STORE,
+            pairs: msgPairs,
+          });
+        });
+      }
+
+      async function runBuild() {
+        const $btn = document.getElementById("do-build");
+        if ($btn.disabled) return;
+
+        // Metadata first, then the pairs. getMeta() has already painted its
+        // own field errors, so null means stop, not inspect.
+        const meta = window.__CREATE__.getMeta();
+        if (!meta) {
+          setBuildStatus("Fix the mod details above, then try again.", "err");
+          return;
+        }
+
+        const pairs = window.__CREATE__.getPairs();
+        if (pairs.length === 0) {
+          setBuildStatus(
+            "Pick a build and import your mod in at least one row first.",
+            "err",
+          );
+          return;
+        }
+
+        const theme = window.__CREATE__.getTheme();
+
+        terminateWorker();
+        $btn.disabled = true;
+        setBuildStatus("Comparing your mod against the base game...", "");
+        clearBuildProgress();
+        renderBuildProgress(pairs);
+
+        try {
+          const diffResult = await runDiffWorker(pairs);
+          setBuildStatus("Packaging the mod file...", "");
+          const modBytes = await ModPackage.build({
+            id: meta.id,
+            name: meta.name,
+            author: meta.author,
+            version: meta.version,
+            description: meta.description,
+            icon: meta.icon,
+            saves: meta.saves,
+            update: meta.update,
+            theme: theme,
+            variants: diffResult.variants,
+            payloads: diffResult.payloads,
+          });
+
+          // A previous build's outputs are replaced only once the new one has
+          // succeeded: a failed rebuild must not take away the working
+          // .tcoaalmod the modder already has.
+          _modBytes = modBytes;
+          _meta = meta;
+          renderBuildSummary(diffResult.variants);
+
+          const filename = modPackageFilename(meta.id, meta.version);
+          const $downloads = document.getElementById("downloads");
+          $downloads.innerHTML = "";
+          const $dl = document.createElement("button");
+          $dl.type = "button";
+          $dl.className = "btn small";
+          $dl.textContent = "Download " + filename;
+          $dl.addEventListener("click", function () {
+            download(_modBytes, filename, "application/zip");
+          });
+          $downloads.appendChild($dl);
+
+          setBuildStatus("Build complete.", "ok");
+          showStampSection();
+        } catch (e) {
+          // A failed build leaves the button enabled (the `finally` below)
+          // and the error visible here.
+          setBuildStatus("Build failed: " + ((e && e.message) || e), "err");
+        } finally {
+          terminateWorker();
+          $btn.disabled = false;
+        }
+      }
+
+      document
+        .getElementById("do-build")
+        .addEventListener("click", function () {
+          runBuild();
+        });
+
+      // Fetch, verify and stamp the three per-OS installer stubs.
+      //
+      // Stubs live in their own Cache Storage bucket (STUB_CACHE), never in
+      // APP_SHELL: the Linux AppImage alone is around 140 MB, and a modder
+      // who never presses the Linux button must never have it fetched for
+      // them. Nothing here, stubs.json included, is reached before a click.
+
+      const STUB_CACHE = "tcoaal-stubs";
+
+      // Keyed by the sha256 the bytes were verified against, not by the
+      // plain /stub/ URL. Every release republishes those three URLs with new
+      // bytes, so a URL-keyed entry serves the PREVIOUS release's binary and
+      // fails the checksum below forever. Keyed by hash, a new release simply
+      // misses the cache and downloads.
+      function stubCacheKey(entry) {
+        return "/stub/" + entry.file + "?sha256=" + entry.sha256;
+      }
+
+      // Drop anything the current stubs.json no longer names, so a previous
+      // release's copies do not hold the origin's quota (the AppImage alone
+      // is over 100 MB). Best effort: refusing this still stamps.
+      async function pruneStubCache(stubs) {
+        try {
+          const cache = await caches.open(STUB_CACHE);
+          const keep = new Set(
+            Object.keys(stubs).map(function (k) {
+              return new URL(stubCacheKey(stubs[k]), location.href).href;
+            }),
+          );
+          const keys = await cache.keys();
+          for (const req of keys) {
+            if (!keep.has(req.url)) await cache.delete(req);
+          }
+        } catch (e) {}
+      }
+
+      let _stubs = null;
+      async function loadStubs() {
+        if (_stubs) return _stubs;
+        const r = await fetch("/stub/stubs.json", { cache: "no-cache" });
+        if (!r.ok)
+          throw new Error("The installer stubs are not published yet.");
+        _stubs = await r.json();
+        await pruneStubCache(_stubs);
+        return _stubs;
+      }
+
+      // verifyStub() gates the stamp: its rejection propagates out of
+      // fetchStub uncaught, so bad bytes are never stamped or downloaded.
+      //
+      // A cached copy that fails the checksum is DELETED and re-downloaded in
+      // the same click. Without that, one corrupted response (a truncated
+      // download, a proxy serving a broken range) fails every attempt after
+      // it too, since cache.match keeps handing back the same bytes. Only
+      // bytes fresh off the network can raise the error, so the message a
+      // modder sees means what it says.
+      async function fetchStub(entry) {
+        const key = stubCacheKey(entry);
+        let cache = null;
+        try {
+          cache = await caches.open(STUB_CACHE);
+        } catch (e) {}
+
+        let bytes = null;
+        if (cache) {
+          const hit = await cache.match(key, { ignoreVary: true });
+          if (hit) {
+            bytes = new Uint8Array(await hit.arrayBuffer());
+            try {
+              await StubStamp.verifyStub(bytes, entry.sha256, entry.file);
+            } catch (e) {
+              await cache.delete(key);
+              bytes = null;
+            }
+          }
+        }
+
+        if (!bytes) {
+          const res = await fetch("/stub/" + entry.file, { cache: "no-store" });
+          if (!res.ok)
+            throw new Error("Could not download " + entry.file + ".");
+          bytes = new Uint8Array(await res.clone().arrayBuffer());
+          // Verify before caching, so bad bytes never reach the cache.
+          await StubStamp.verifyStub(bytes, entry.sha256, entry.file);
+          // Storing is an optimisation, not a step: these are large and the
+          // quota is finite, and a refusal still stamps.
+          if (cache) {
+            try {
+              await cache.put(key, res);
+            } catch (e) {}
+          }
+        }
+
+        return bytes;
+      }
+
+      // online installers
+      //
+      // An online installer carries a placeholder package: this mod's id,
+      // name, version, icon and theme, and no content. The app renders it
+      // exactly as a full one, so the player sees the modder's own page
+      // offline, and mod-loader.js downloads the real package from `online`
+      // when Install is pressed.
+
+      function onlineMode() {
+        return document.getElementById("stamp-mode-online").checked;
+      }
+
+      /**
+       * The published-at field as one of mod-package's source shapes. A
+       * GitHub URL naming a REPO becomes {github}, which always installs the
+       * newest release, so a new version needs no new installer. Anything
+       * else is a direct link to one file. {error} if neither.
+       */
+      function onlineSource(raw) {
+        const v = String(raw || "").trim();
+        if (!v) return { error: "Paste the link your mod is published at." };
+        if (isGithubSlug(v)) return { github: v };
+        // ".../releases" and ".../releases/latest" name the repo, not a file;
+        // githubSlugFromUrl matches only a bare owner/repo tail.
+        const slug = githubSlugFromUrl(
+          v.replace(/\/releases(\/latest)?\/?$/i, ""),
+        );
+        if (slug) return { github: slug };
+        let u;
+        try {
+          u = new URL(v);
+        } catch (e) {
+          return { error: "Enter a full https:// URL, or an owner/repo." };
+        }
+        if (u.protocol !== "https:") {
+          return { error: "The download link must be an https:// URL." };
+        }
+        return { url: v };
+      }
+
+      function describeOnlineSource(src) {
+        if (src.error) return "";
+        if (src.github) {
+          return (
+            "Installs the newest release of " +
+            src.github +
+            ", so publishing a new version needs no new installer."
+          );
+        }
+        return (
+          "Installs exactly this file. To ship a new version, either " +
+          "replace the file at this URL or stamp a new installer."
+        );
+      }
+
+      function syncOnlineField() {
+        const on = onlineMode();
+        document.getElementById("stamp-online-field").hidden = !on;
+        if (!on) {
+          showFieldError("stamp-online-url", "");
+          document.getElementById("stamp-online-hint").textContent = "";
+          return;
+        }
+        const raw = document.getElementById("stamp-online-url").value;
+        if (!raw.trim()) {
+          showFieldError("stamp-online-url", "");
+          document.getElementById("stamp-online-hint").textContent = "";
+          return;
+        }
+        const src = onlineSource(raw);
+        showFieldError("stamp-online-url", src.error || "");
+        document.getElementById("stamp-online-hint").textContent =
+          describeOnlineSource(src);
+      }
+
+      ["stamp-mode-full", "stamp-mode-online"].forEach(function (id) {
+        document
+          .getElementById(id)
+          .addEventListener("change", syncOnlineField);
+      });
+      document
+        .getElementById("stamp-online-url")
+        .addEventListener("input", syncOnlineField);
+
+      /**
+       * The bytes the three platform buttons stamp. Rebuilt on each click so
+       * the placeholder carries the Customize screen as it stands now.
+       */
+      async function stampPayload() {
+        if (!onlineMode()) return _modBytes;
+        const src = onlineSource(
+          document.getElementById("stamp-online-url").value,
+        );
+        if (src.error) {
+          showFieldError("stamp-online-url", src.error);
+          throw new Error(src.error);
+        }
+        return ModPackage.build({
+          id: _meta.id,
+          name: _meta.name,
+          author: _meta.author,
+          version: _meta.version,
+          description: _meta.description,
+          icon: _meta.icon,
+          saves: _meta.saves,
+          update: _meta.update,
+          theme: window.__CREATE__.getTheme(),
+          // No variants and no payloads: the package this points at is what
+          // gets checked against the player's copy of the game.
+          variants: [],
+          payloads: new Map(),
+          online: src,
+        });
+      }
+
+      function setStampStatus(prefix, msg, kind) {
+        const $el = document.getElementById(prefix + "-stamp-status");
+        if (!$el) return;
+        $el.textContent = msg || "";
+        $el.className = "build-status" + (kind ? " " + kind : "");
+      }
+
+      function setStampNote(prefix, msg) {
+        const $el = document.getElementById(prefix + "-stamp-note");
+        if (!$el) return;
+        $el.textContent = msg || "";
+        $el.hidden = !msg;
+      }
+
+      function resetStampSection() {
+        ["windows", "mac", "linux"].forEach(function (prefix) {
+          setStampStatus(prefix, "", "");
+        });
+        setStampNote("windows", "");
+        setStampNote("mac", "");
+      }
+
+      function showStampSection() {
+        resetStampSection();
+        syncOnlineField();
+        document.getElementById("stamp-section").hidden = false;
+      }
+
+      // The stub's own icon.icns, read back out of its app bundle zip.
+      // stampMac() always rewrites the icon entry it locates, so handing it
+      // the same bytes is how "keep the stub's icon" is expressed without
+      // duplicating its entry-finding here.
+      async function extractStubIcns(stubZipBytes) {
+        const entries = await ModPackage.readZip(stubZipBytes);
+        let iconKey = null;
+        entries.forEach(function (_data, key) {
+          if (/\/Contents\/Resources\/icon\.icns$/.test(key)) iconKey = key;
+        });
+        if (!iconKey) throw new Error("Could not find the stub's own icon.");
+        return entries.get(iconKey);
+      }
+
+      // Windows is stamp-then-attach, and stampWindows() enforces that
+      // order itself: nothing here re-sequences PeResources.stamp and
+      // attachTrailer by hand.
+      //
+      // With no icon supplied the stub is left alone and only the trailer is
+      // appended. PeResources.stamp() would carry over every resource it does
+      // not rebuild, the stub's own icon included, but rewriting a section to
+      // change nothing has only downside. The cost is that the product name
+      // goes unstamped in that case: stampWindows() writes name and icon
+      // together in one section. buildMac() below has no such pairing, the
+      // icon being its own zip entry and the name living in Info.plist.
+      async function buildWindows() {
+        const $btn = document.getElementById("stamp-windows-btn");
+        $btn.disabled = true;
+        setStampNote("windows", "");
+        setStampStatus("windows", "Fetching the Windows stub...", "");
+        try {
+          const payload = await stampPayload();
+          const stubs = await loadStubs();
+          const entry = stubs["win-x64.exe"];
+          if (!entry) throw new Error("No Windows stub is published.");
+          const stub = await fetchStub(entry);
+
+          let outBytes;
+          if (_meta.icon) {
+            setStampStatus("windows", "Stamping the icon...", "");
+            const sizes = [16, 32, 48, 64, 128, 256];
+            const pngs = await StubStamp.renderIconSizes(_meta.icon, sizes);
+            const icons = sizes.map(function (s) {
+              return { width: s, height: s, png: pngs.get(s) };
+            });
+            outBytes = StubStamp.stampWindows(stub, {
+              payload: payload,
+              icons: icons,
+              name: _meta.name,
+            });
+          } else {
+            outBytes = StubStamp.attachTrailer(stub, payload);
+            setStampNote(
+              "windows",
+              "You did not pick an icon, so this installer keeps the loader's own name and icon.",
+            );
+          }
+
+          setStampStatus("windows", "Done.", "ok");
+          download(
+            outBytes,
+            sanitizeInstallerName(_meta.name) + " Installer.exe",
+            "application/octet-stream",
+          );
+        } catch (e) {
+          setStampStatus("windows", (e && e.message) || String(e), "err");
+        } finally {
+          $btn.disabled = false;
+        }
+      }
+
+      async function buildMac() {
+        const $btn = document.getElementById("stamp-mac-btn");
+        $btn.disabled = true;
+        setStampNote("mac", "");
+        setStampStatus("mac", "Fetching the macOS stub...", "");
+        try {
+          const payload = await stampPayload();
+          const stubs = await loadStubs();
+          const entry = stubs["macos.zip"];
+          if (!entry) throw new Error("No macOS stub is published.");
+          const stubZip = await fetchStub(entry);
+
+          let icnsBytes;
+          if (_meta.icon) {
+            setStampStatus("mac", "Stamping the icon...", "");
+            const sizes = [32, 64, 128, 256, 512, 1024];
+            const pngs = await StubStamp.renderIconSizes(_meta.icon, sizes);
+            icnsBytes = Icns.build(pngs);
+          } else {
+            icnsBytes = await extractStubIcns(stubZip);
+            setStampNote(
+              "mac",
+              "You did not pick an icon, so this installer keeps the loader's own icon.",
+            );
+          }
+
+          setStampStatus("mac", "Packaging the .app...", "");
+          const zipOut = await StubStamp.stampMac(stubZip, {
+            payload: payload,
+            icnsBytes: icnsBytes,
+            name: _meta.name,
+            bundleId: "app.tcoaal.mod." + _meta.id,
+          });
+
+          setStampStatus("mac", "Done.", "ok");
+          download(
+            zipOut,
+            sanitizeInstallerName(_meta.name) + " Installer.app.zip",
+            "application/zip",
+          );
+        } catch (e) {
+          setStampStatus("mac", (e && e.message) || String(e), "err");
+        } finally {
+          $btn.disabled = false;
+        }
+      }
+
+      async function buildLinux() {
+        const $btn = document.getElementById("stamp-linux-btn");
+        $btn.disabled = true;
+        setStampStatus("linux", "Fetching the Linux stub...", "");
+        try {
+          const payload = await stampPayload();
+          const stubs = await loadStubs();
+          const entry = stubs["linux-x86_64.AppImage"];
+          if (!entry) throw new Error("No Linux stub is published.");
+          const stub = await fetchStub(entry);
+          const outBytes = StubStamp.stampLinux(stub, { payload: payload });
+
+          setStampStatus("linux", "Done.", "ok");
+          download(
+            outBytes,
+            sanitizeInstallerName(_meta.name) + " Installer.AppImage",
+            "application/octet-stream",
+          );
+        } catch (e) {
+          setStampStatus("linux", (e && e.message) || String(e), "err");
+        } finally {
+          $btn.disabled = false;
+        }
+      }
+
+      document
+        .getElementById("stamp-windows-btn")
+        .addEventListener("click", function () {
+          buildWindows();
+        });
+      document
+        .getElementById("stamp-mac-btn")
+        .addEventListener("click", function () {
+          buildMac();
+        });
+      document
+        .getElementById("stamp-linux-btn")
+        .addEventListener("click", function () {
+          buildLinux();
+        });
+    </script>
+  </body>
+</html>

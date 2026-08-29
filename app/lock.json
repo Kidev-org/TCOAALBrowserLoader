@@ -1,0 +1,25 @@
+{
+  "_schema": {
+    "enabled": "bool: toggle the lock on/off. When false, every other field is ignored.",
+    "type": "'complete' | 'partial'. complete = no dismiss button, site is unreachable until this file is updated. partial = one-time notice with a dismiss button; user is allowed through once they acknowledge.",
+    "id": "string: stable identifier for this lock instance. Bump it when you want a previously-dismissed partial lock to re-appear.",
+    "title": "string: heading shown at the top of the lock screen.",
+    "text": "string: body copy. Plain text; newlines render as paragraph breaks.",
+    "image": "string | null: game-asset path like 'img/pictures/<hash>.png'. Shown only if it loads successfully (i.e. the user has imported game files). null/omit to skip the image entirely.",
+    "cropImage": "bool: default true. When true, the image is auto-cropped to the tight bounding box of its non-transparent pixels (RPG Maker pictures usually have generous transparent margins). Set to false to keep the original framing.",
+    "sound": "string | null: game-asset path like 'audio/se/<hash>.ogg'. Played once when the lock screen appears, only if game assets have been imported (the SW decrypts the file). Browsers that block autoplay will play it on the first user interaction instead. Set to null/omit to play nothing.",
+    "buttons": "array of flat label/href string pairs: ['label1', 'href1', 'label2', 'href2', ...]. Extra info links shown below the dismiss button (for complete locks: the only buttons). Open in a new tab."
+  },
+  "enabled": false,
+  "type": "partial",
+  "id": "default",
+  "title": "Working on updating the website",
+  "text": "In the meantime, do not open the 'Mods' menu, it will fail to open",
+  "image": "img/pictures/e2cd398e72a890c5.png",
+  "cropImage": true,
+  "sound": "audio/se/e4b12af62524a5fe.ogg",
+  "buttons": [
+    "Discuss on Discord",
+    "https://discord.com/channels/1188007928138051584/1491299113029996684"
+  ]
+}

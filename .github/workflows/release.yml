@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, without the leading v (e.g. 1.0.0)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark the GitHub Release as a pre-release"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - name: Validate the version
+        id: v
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error title=Bad version::\"$VERSION\" is not a version. Pass 1.0.0, not v1.0.0."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  stubs:
+    needs: prepare
+    uses: ./.github/workflows/deploy-stubs.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+    permissions:
+      contents: write
+    secrets: inherit
+
+  web:
+    needs: [prepare, stubs]
+    uses: ./.github/workflows/deploy-web.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    secrets: inherit
+
+  android:
+    needs: prepare
+    uses: ./.github/workflows/deploy-android.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+    permissions:
+      contents: write
+    secrets: inherit
+
+  publish:
+    needs: [prepare, stubs, web, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+
+      - name: Download the Android APK
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: app-release-apk
+          path: dist
+
+      - name: Download the installer stubs
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: installer-stubs
+          path: stubs
+
+      - name: Name the files after the release
+        run: |
+          mv dist/app-release.apk "dist/TCOAAL-Player-v${VERSION}.apk"
+          # stubs.json is the manifest create.html reads off the live site; it
+          # has no meaning as a release download.
+          rm -f stubs/stubs.json
+          for f in stubs/*; do
+            mv "$f" "dist/TCOAAL-Mod-Installer-v${VERSION}-$(basename "$f")"
+          done
+
+      # The stub/v$VERSION tag is not written here: deploy-stubs.yml publishes
+      # the stub set as a release on that tag (which creates it), the way
+      # deploy-android.yml owns android/v$VERSION.
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v3.0.1
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ inputs.prerelease }}
+          files: dist/*

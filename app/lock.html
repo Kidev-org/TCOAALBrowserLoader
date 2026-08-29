@@ -1,0 +1,562 @@
+<!doctype html>
+<!--
+  TCOAAL Browser Player
+  Copyright (C) 2026 kidev
+
+  This program is free software: you can redistribute it and/or modify it
+  under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or (at your
+  option) any later version. This program is distributed in the hope that it
+  will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+  of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+  General Public License for more details: <https://www.gnu.org/licenses/>.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>TCOAAL Browser Player</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        background: #0a0a0a;
+        color: #d3d0c0;
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: Georgia, serif;
+        cursor: default;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: clamp(16px, 3vw, 32px);
+        box-sizing: border-box;
+      }
+      .modal {
+        /* Width: ~80% of the viewport on small screens, capped so very wide
+           monitors don't stretch into unreadable line lengths. min() picks
+           whichever produces a narrower box. */
+        width: min(820px, 88vw);
+        max-width: 100%;
+        text-align: center;
+      }
+      .modal[hidden] {
+        display: none;
+      }
+      .hero {
+        max-width: 100%;
+        width: auto;
+        height: auto;
+        display: block;
+        margin: 0 auto clamp(14px, 2vw, 22px);
+        image-rendering: pixelated;
+        image-rendering: -moz-crisp-edges;
+        image-rendering: crisp-edges;
+      }
+      .hero[hidden] {
+        display: none;
+      }
+      h1 {
+        color: #ec83c3;
+        /* Floor at 20px so the title never gets unreadable on tall narrow
+           windows where 2vw collapses to nothing. */
+        font-size: clamp(20px, 2.6vw, 30px);
+        font-weight: normal;
+        letter-spacing: 0.05em;
+        margin: 0 0 clamp(12px, 1.6vw, 18px);
+      }
+      p {
+        color: rgba(255, 255, 255, 0.78);
+        line-height: 1.55;
+        font-size: clamp(14px, 1.35vw, 17px);
+        margin: 0 0 12px;
+        white-space: pre-wrap;
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-items: center;
+        margin-top: 18px;
+      }
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+        margin-top: 14px;
+      }
+      button,
+      a.btn {
+        font-family: Georgia, serif;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      button.primary {
+        background: #955456;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        padding: clamp(10px, 1.1vw, 14px) clamp(20px, 2.4vw, 32px);
+        font-size: clamp(14px, 1.35vw, 17px);
+        font-weight: bold;
+        min-width: min(280px, 80vw);
+        min-height: 48px;
+        transition: background 0.15s;
+      }
+      button.primary:hover:not(:disabled) {
+        background: #a8616a;
+      }
+      a.btn {
+        background: #2a2a2a;
+        color: #d3d0c0;
+        border: 1px solid #3a3a3a;
+        border-radius: 4px;
+        padding: 8px 14px;
+        font-size: clamp(12px, 1.1vw, 14px);
+        transition:
+          background 0.15s,
+          border-color 0.15s;
+      }
+      a.btn:hover {
+        background: #353535;
+        border-color: #555;
+      }
+      .splash {
+        color: #777;
+        font-size: clamp(13px, 1.2vw, 15px);
+        letter-spacing: 0.05em;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="splash" id="splash">Checking site status...</div>
+
+    <div class="modal" id="modal" hidden>
+      <img
+        class="hero"
+        id="hero-img"
+        alt=""
+        hidden
+        onerror="this.hidden = true"
+        onload="this.hidden = false"
+      />
+      <h1 id="title"></h1>
+      <div id="text-container"></div>
+      <div class="actions" id="actions"></div>
+      <div class="links" id="links"></div>
+    </div>
+
+    <script>
+      "use strict";
+
+      // Site-wide lock screen. Loaded by the per-page lock check when
+      // /lock.json reports `enabled: true`. Owns:
+      //   - rendering the lock content (title/text/image/buttons)
+      //   - dismissal flow for `partial` locks (one-time acknowledge that
+      //     records the lock id in IndexedDB so subsequent boots skip)
+      //   - hard-blocking for `complete` locks (no dismiss path; users
+      //     wait for a repo update that flips enabled back to false)
+      //
+      // The lock config is fetched fresh on every load (no-store + cache
+      // buster), so a push to the repo takes effect immediately the next
+      // time a client navigates.
+
+      var LOCK_URL = "/lock.json";
+      var ASSETS_DB_NAME = "tcoaal";
+      var ASSETS_DB_VERSION = 1;
+      var ASSETS_STORE = "assets";
+      // Single IDB key holding the array of dismissed partial-lock ids.
+      // Living in the same `tcoaal` assets DB lang-shim already uses,
+      // alongside `__active_mod__` etc., keeps the storage surface tidy.
+      var DISMISSED_KEY = "__lock_dismissed__";
+      // localStorage mirror so the entry-page sync check can skip a
+      // round-trip to lock.html when the user has already acknowledged.
+      var DISMISSED_LS_PREFIX = "__lock_dismissed__:";
+
+      var $splash = document.getElementById("splash");
+      var $modal = document.getElementById("modal");
+      var $hero = document.getElementById("hero-img");
+      var $title = document.getElementById("title");
+      var $text = document.getElementById("text-container");
+      var $actions = document.getElementById("actions");
+      var $links = document.getElementById("links");
+
+      function getReturnUrl() {
+        try {
+          var params = new URLSearchParams(location.search);
+          var raw = params.get("return") || "/index.html";
+          // Only allow same-origin absolute paths to avoid an open-redirect
+          // via a crafted ?return=https://attacker.example URL.
+          if (!/^\/[^/]/.test(raw) && raw !== "/") return "/index.html";
+          return raw;
+        } catch (e) {
+          return "/index.html";
+        }
+      }
+
+      function goBack() {
+        location.replace(getReturnUrl());
+      }
+
+      function fetchLock() {
+        // cache: no-store + cachebuster query: defeat both the browser HTTP
+        // cache and any intermediate CDN cache. The SW also no-stores this
+        // path (see sw.js infrastructure list).
+        var url = LOCK_URL + "?_=" + Date.now();
+        return fetch(url, { cache: "no-store" }).then(function (r) {
+          if (!r.ok) throw new Error("lock.json HTTP " + r.status);
+          return r.json();
+        });
+      }
+
+      function openAssetsDb() {
+        return new Promise(function (resolve) {
+          try {
+            var req = indexedDB.open(ASSETS_DB_NAME, ASSETS_DB_VERSION);
+            req.onupgradeneeded = function (e) {
+              try {
+                e.target.result.createObjectStore(ASSETS_STORE);
+              } catch (_) {}
+            };
+            req.onsuccess = function () {
+              resolve(req.result);
+            };
+            req.onerror = function () {
+              resolve(null);
+            };
+            req.onblocked = function () {
+              resolve(null);
+            };
+          } catch (_) {
+            resolve(null);
+          }
+        });
+      }
+
+      function idbGet(db, key) {
+        return new Promise(function (resolve) {
+          if (!db) {
+            resolve(null);
+            return;
+          }
+          try {
+            var tx = db.transaction(ASSETS_STORE, "readonly");
+            var req = tx.objectStore(ASSETS_STORE).get(key);
+            req.onsuccess = function () {
+              resolve(req.result === undefined ? null : req.result);
+            };
+            req.onerror = function () {
+              resolve(null);
+            };
+          } catch (_) {
+            resolve(null);
+          }
+        });
+      }
+
+      function idbPut(db, key, value) {
+        return new Promise(function (resolve) {
+          if (!db) {
+            resolve();
+            return;
+          }
+          try {
+            var tx = db.transaction(ASSETS_STORE, "readwrite");
+            tx.objectStore(ASSETS_STORE).put(value, key);
+            tx.oncomplete = function () {
+              resolve();
+            };
+            tx.onerror = function () {
+              resolve();
+            };
+            tx.onabort = function () {
+              resolve();
+            };
+          } catch (_) {
+            resolve();
+          }
+        });
+      }
+
+      function readDismissed(db) {
+        return idbGet(db, DISMISSED_KEY).then(function (v) {
+          if (Array.isArray(v)) return v;
+          return [];
+        });
+      }
+
+      function writeDismissed(db, ids) {
+        return idbPut(db, DISMISSED_KEY, ids);
+      }
+
+      function renderText(text) {
+        $text.textContent = "";
+        var paragraphs = String(text || "").split(/\n\s*\n/);
+        for (var i = 0; i < paragraphs.length; i++) {
+          var p = document.createElement("p");
+          // Single newlines inside a paragraph are preserved by the
+          // white-space: pre-wrap CSS rule.
+          p.textContent = paragraphs[i].trim();
+          $text.appendChild(p);
+        }
+      }
+
+      function renderLinks(buttons) {
+        $links.textContent = "";
+        if (!Array.isArray(buttons) || buttons.length === 0) return;
+        // Two accepted shapes:
+        //   1. ["label", "href", "label", "href", ...]   (flat pairs)
+        //   2. [{label, href}, ...]
+        // The flat form is the documented default in lock.json (less
+        // typing); the object form is tolerated for compatibility.
+        var pairs = [];
+        if (typeof buttons[0] === "string") {
+          for (var i = 0; i + 1 < buttons.length; i += 2) {
+            pairs.push({ label: buttons[i], href: buttons[i + 1] });
+          }
+        } else {
+          for (var j = 0; j < buttons.length; j++) {
+            var b = buttons[j];
+            if (b && b.label && b.href) pairs.push(b);
+          }
+        }
+        for (var k = 0; k < pairs.length; k++) {
+          var p = pairs[k];
+          if (!p.label || !p.href) continue;
+          var a = document.createElement("a");
+          a.className = "btn";
+          a.textContent = p.label;
+          a.href = p.href;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          $links.appendChild(a);
+        }
+      }
+
+      // Play a one-shot SFX (game asset, served decrypted by the SW). On
+      // failure (no assets imported, network error, codec issue) the call
+      // resolves silently. Browser autoplay policies may reject `.play()`
+      // without a user gesture; in that case we arm a one-shot pointerdown
+      // listener so the SFX fires on the first interaction.
+      function playLockSfx(soundPath) {
+        if (!soundPath || typeof soundPath !== "string") return;
+        try {
+          var audio = new Audio();
+          audio.preload = "auto";
+          audio.src = "/" + String(soundPath).replace(/^\/+/, "");
+          var armed = false;
+          function arm() {
+            if (armed) return;
+            armed = true;
+            window.addEventListener(
+              "pointerdown",
+              function once() {
+                window.removeEventListener("pointerdown", once, true);
+                audio.play().catch(function () {});
+              },
+              { once: true, capture: true },
+            );
+          }
+          var p = audio.play();
+          if (p && typeof p.catch === "function") {
+            p.catch(function () {
+              arm();
+            });
+          }
+        } catch (_) {}
+      }
+
+      function maybeShowImage(image, crop) {
+        if (!image || typeof image !== "string") {
+          $hero.hidden = true;
+          $hero.removeAttribute("src");
+          return;
+        }
+        // The image only renders if it actually loads: the SW serves it
+        // from IDB when the user has imported game assets, otherwise the
+        // request 404s and we just keep the element hidden. When `crop`
+        // is true (the default) we additionally trim a tight bounding
+        // box around alpha>0 pixels so RPG Maker's transparent picture
+        // margins don't bloat the hero size.
+        $hero.hidden = true;
+        $hero.onerror = function () {
+          $hero.hidden = true;
+        };
+        $hero.onload = null;
+
+        var safe = String(image).replace(/^\/+/, "");
+        var src = "/" + safe;
+
+        if (!crop) {
+          $hero.onload = function () {
+            $hero.hidden = false;
+          };
+          $hero.src = src;
+          return;
+        }
+
+        // Probe in a detached <img>, crop on success, swap the cropped
+        // data URL into the visible element. Falls back to the uncropped
+        // source on any failure (canvas taint, fully-transparent source,
+        // crop yields nothing).
+        var probe = new Image();
+        probe.crossOrigin = "anonymous";
+        probe.onerror = function () {
+          $hero.hidden = true;
+        };
+        probe.onload = function () {
+          var cropped = null;
+          try {
+            cropped = cropAlphaBBox(probe);
+          } catch (e) {
+            console.warn("[lock] hero crop failed:", e);
+          }
+          $hero.onload = function () {
+            $hero.hidden = false;
+          };
+          $hero.src = cropped || src;
+        };
+        probe.src = src;
+      }
+
+      // Compute the alpha-bbox of an Image and return a data URL of the
+      // cropped region, or null when no crop is needed / possible.
+      function cropAlphaBBox(image) {
+        var w = image.naturalWidth;
+        var h = image.naturalHeight;
+        if (!w || !h) return null;
+        var canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(image, 0, 0);
+        var data;
+        try {
+          data = ctx.getImageData(0, 0, w, h).data;
+        } catch (_) {
+          return null;
+        }
+        var minX = w,
+          minY = h,
+          maxX = -1,
+          maxY = -1;
+        for (var y = 0; y < h; y++) {
+          var rowOff = y * w * 4;
+          for (var x = 0; x < w; x++) {
+            if (data[rowOff + x * 4 + 3] > 0) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+          }
+        }
+        if (maxX < 0) return null;
+        var cw = maxX - minX + 1;
+        var ch = maxY - minY + 1;
+        if (cw === w && ch === h) return null;
+        var out = document.createElement("canvas");
+        out.width = cw;
+        out.height = ch;
+        out
+          .getContext("2d")
+          .drawImage(canvas, minX, minY, cw, ch, 0, 0, cw, ch);
+        return out.toDataURL("image/png");
+      }
+
+      function dismissAndContinue(db, lockId) {
+        // Record in both IDB (source of truth) and localStorage (fast
+        // sync access for the per-page entry check).
+        readDismissed(db)
+          .then(function (ids) {
+            if (ids.indexOf(lockId) < 0) ids.push(lockId);
+            return writeDismissed(db, ids);
+          })
+          .then(function () {
+            try {
+              localStorage.setItem(DISMISSED_LS_PREFIX + lockId, "1");
+            } catch (e) {}
+            goBack();
+          });
+      }
+
+      function showLock(lock, db) {
+        $splash.hidden = true;
+        $title.textContent = lock.title || "TCOAAL";
+        renderText(lock.text || "");
+        // cropImage defaults to true: only an explicit `false` disables.
+        var crop = lock.cropImage !== false;
+        maybeShowImage(lock.image, crop);
+        renderLinks(lock.buttons);
+        playLockSfx(lock.sound);
+
+        $actions.textContent = "";
+        if (lock.type === "partial") {
+          var btn = document.createElement("button");
+          btn.className = "primary";
+          btn.type = "button";
+          btn.textContent = "OK, got it";
+          btn.addEventListener("click", function () {
+            btn.disabled = true;
+            btn.textContent = "Continuing...";
+            dismissAndContinue(db, lock.id || "default");
+          });
+          $actions.appendChild(btn);
+        }
+        // complete: no actions block; user must wait for a repo update.
+
+        $modal.hidden = false;
+      }
+
+      function init() {
+        fetchLock()
+          .then(function (lock) {
+            if (!lock || !lock.enabled) {
+              goBack();
+              return;
+            }
+            return openAssetsDb().then(function (db) {
+              if (lock.type === "partial") {
+                return readDismissed(db).then(function (ids) {
+                  if (ids.indexOf(lock.id || "default") >= 0) {
+                    // Already acknowledged: fast-path back.
+                    goBack();
+                    return;
+                  }
+                  showLock(lock, db);
+                });
+              }
+              if (lock.type === "complete") {
+                showLock(lock, db);
+                return;
+              }
+              // Unknown type: fail open rather than trap the user.
+              goBack();
+            });
+          })
+          .catch(function (err) {
+            console.warn("[lock] check failed, failing open:", err);
+            goBack();
+          });
+      }
+
+      init();
+    </script>
+  </body>
+</html>

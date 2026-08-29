@@ -1,0 +1,833 @@
+<!doctype html>
+<!--
+  TCOAAL Browser Player
+  Copyright (C) 2026 kidev
+
+  This program is free software: you can redistribute it and/or modify it
+  under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or (at your
+  option) any later version. This program is distributed in the hope that it
+  will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+  of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+  General Public License for more details: <https://www.gnu.org/licenses/>.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Importing Saves | TCOAAL Browser Player</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        background: #0a0a0a;
+        color: #d3d0c0;
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: Georgia, serif;
+        cursor: default;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: clamp(16px, 3vw, 32px);
+        box-sizing: border-box;
+      }
+      .modal {
+        width: min(820px, 88vw);
+        max-width: 100%;
+        text-align: center;
+      }
+      h1 {
+        color: #ec83c3;
+        font-size: clamp(20px, 2.6vw, 30px);
+        font-weight: normal;
+        letter-spacing: 0.05em;
+        margin: 0 0 clamp(12px, 1.6vw, 18px);
+      }
+      p {
+        color: rgba(255, 255, 255, 0.78);
+        line-height: 1.55;
+        font-size: clamp(14px, 1.35vw, 17px);
+        margin: 0 0 12px;
+      }
+      p.warning strong {
+        color: #f0c8c8;
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        align-items: center;
+        margin-top: 8px;
+      }
+      button {
+        font-family: Georgia, serif;
+        cursor: pointer;
+      }
+      button:disabled {
+        cursor: default;
+      }
+      button.primary {
+        background: #86d37a;
+        color: #000;
+        border: 3px solid #000;
+        border-radius: 4px;
+        padding: clamp(10px, 1.6vmin, 20px) clamp(20px, 3.2vmin, 36px);
+        font-size: clamp(16px, 2.4vmin, 22px);
+        font-weight: bold;
+        letter-spacing: 0.1em;
+        min-width: min(320px, 84vw);
+        min-height: 52px;
+        text-shadow: 0 1px 2px rgba(255, 255, 255, 0.4);
+        box-shadow:
+          0 0 14px rgba(134, 211, 122, 0.5),
+          inset 0 0 18px rgba(0, 0, 0, 0.35);
+        transition:
+          background 0.18s ease,
+          box-shadow 0.18s ease;
+      }
+      button.primary:hover:not(:disabled) {
+        background: #a4e09a;
+        box-shadow:
+          0 0 22px rgba(164, 224, 154, 0.65),
+          inset 0 0 18px rgba(0, 0, 0, 0.35);
+      }
+      button.primary:disabled {
+        background: #4d6b48;
+        color: #1c1c1c;
+        box-shadow:
+          0 0 6px rgba(134, 211, 122, 0.18),
+          inset 0 0 12px rgba(0, 0, 0, 0.35);
+        text-shadow: none;
+      }
+      button.skip {
+        background: transparent;
+        color: #777;
+        border: 1px solid #3a3a3a;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: clamp(11px, 0.95vw, 12px);
+        line-height: 1.35;
+        max-width: min(520px, 92vw);
+        transition:
+          color 0.15s,
+          border-color 0.15s,
+          background 0.15s;
+      }
+      button.skip:hover:not(:disabled) {
+        color: #aaa;
+        border-color: #555;
+        background: #15100f;
+      }
+      button.skip:disabled {
+        color: #444;
+        border-color: #222;
+      }
+      .status {
+        margin-top: 14px;
+        font-size: clamp(12px, 1.1vw, 14px);
+        color: #8fc8a0;
+        min-height: 1.2em;
+      }
+      .status.err {
+        color: #ff9aa2;
+      }
+      progress {
+        width: min(520px, 84vw);
+        height: 10px;
+        margin: 14px auto 4px;
+        display: block;
+        accent-color: #86d37a;
+      }
+      code {
+        background: #1a1a1a;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 0.9em;
+      }
+      .err-detail {
+        max-width: min(640px, 92vw);
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 10px 12px;
+        color: #ff9aa2;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: clamp(11px, 1vw, 13px);
+        text-align: left;
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 14px auto 0;
+        display: none;
+      }
+      .err-detail.visible {
+        display: block;
+      }
+      a {
+        color: #ec83c3;
+      }
+      .panel[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="modal">
+      <h1 id="title">Importing saves...</h1>
+
+      <div class="panel" id="panel-receiving">
+        <p id="receiving-text">
+          Waiting for <code>play-tcoaal.kidev.org</code> to start the save
+          transfer...
+        </p>
+        <progress id="bar" max="100" value="0"></progress>
+        <p class="status" id="status"></p>
+      </div>
+
+      <div class="panel" id="panel-conflict" hidden>
+        <p class="warning">
+          <strong>Heads up:</strong> this site already has saves.
+        </p>
+        <p>
+          Importing from <code>play-tcoaal.kidev.org</code> will
+          <strong>overwrite</strong> the saves currently on
+          <code>tcoaal.app</code>. Download a backup of your current saves
+          first?
+        </p>
+        <div class="actions">
+          <button class="primary" id="backup-btn">
+            Download backup &amp; continue
+          </button>
+          <button class="skip" id="overwrite-btn">
+            No backup: continue anyway
+          </button>
+          <button class="skip" id="cancel-btn">Cancel migration</button>
+        </div>
+        <p class="status" id="status-conflict"></p>
+      </div>
+
+      <div class="panel" id="panel-done" hidden>
+        <p>
+          Import complete. You can close this window, the other window will
+          continue to <a href="/">tcoaal.app</a> automatically.
+        </p>
+      </div>
+
+      <div class="panel" id="panel-no-opener" hidden>
+        <p>
+          This page is the receiver for migrating your TCOAAL Browser Player
+          saves from <code>play-tcoaal.kidev.org</code> to
+          <code>tcoaal.app</code>.
+        </p>
+        <p>
+          It only works when opened automatically by the old site. To start a
+          migration, visit
+          <a href="https://play-tcoaal.kidev.org/">play-tcoaal.kidev.org</a>.
+        </p>
+        <p>Already migrated? <a href="/">Open the player</a>.</p>
+      </div>
+
+      <pre class="err-detail" id="err-detail"></pre>
+    </div>
+
+    <script>
+      "use strict";
+
+      // Receiver-side of the cross-origin data migration popup. Opened by
+      // /old.html on play-tcoaal.kidev.org. Owns: postMessage handshake,
+      // local-conflict UI (offer .zip save backup before overwriting),
+      // writes incoming localStorage entries and IndexedDB chunks into
+      // this origin's storage.
+
+      var SENDER_ORIGIN = "https://play-tcoaal.kidev.org";
+
+      // Only the saves DB is accepted. A stale cached copy of the old
+      // sender could still try to ship the asset DB (`tcoaal`, hundreds of
+      // MB of encrypted game files) or the translations DB
+      // (`tcoaal-translations`); those are re-derivable on this domain and
+      // would just waste the user's bandwidth and storage quota.
+      var ALLOWED_IDB_DBS = { "tcoaal-saves": true };
+
+      var $title = document.getElementById("title");
+      var $panelReceiving = document.getElementById("panel-receiving");
+      var $panelConflict = document.getElementById("panel-conflict");
+      var $panelDone = document.getElementById("panel-done");
+      var $panelNoOpener = document.getElementById("panel-no-opener");
+      var $receivingText = document.getElementById("receiving-text");
+      var $bar = document.getElementById("bar");
+      var $status = document.getElementById("status");
+      var $statusConflict = document.getElementById("status-conflict");
+      var $errDetail = document.getElementById("err-detail");
+      var $backupBtn = document.getElementById("backup-btn");
+      var $overwriteBtn = document.getElementById("overwrite-btn");
+      var $cancelBtn = document.getElementById("cancel-btn");
+
+      function showPanel(name) {
+        $panelReceiving.hidden = name !== "receiving";
+        $panelConflict.hidden = name !== "conflict";
+        $panelDone.hidden = name !== "done";
+        $panelNoOpener.hidden = name !== "no-opener";
+      }
+      function setStatus(el, msg, isErr) {
+        el.textContent = msg || "";
+        el.className = "status" + (isErr ? " err" : "");
+      }
+      function setErrDetail(text) {
+        if (text) {
+          $errDetail.textContent = text;
+          $errDetail.classList.add("visible");
+        } else {
+          $errDetail.classList.remove("visible");
+        }
+      }
+      function formatBytes(n) {
+        if (!n) return "0 B";
+        if (n < 1024) return n + " B";
+        if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+        if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " MB";
+        return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
+      }
+
+      // No opener (direct nav) -> this page is useless. Show explainer.
+      if (!window.opener) {
+        showPanel("no-opener");
+      } else {
+        initReceiver();
+      }
+
+      function openDB(name, neededStores) {
+        // Probe to learn the existing version + stores without forcing an
+        // upgrade. Then either reopen at the same version (all stores
+        // present) or bump to create the missing ones.
+        return new Promise(function (resolve, reject) {
+          var probe = indexedDB.open(name);
+          probe.onerror = function () {
+            reject(probe.error);
+          };
+          probe.onsuccess = function () {
+            var db = probe.result;
+            var existing = Array.from(db.objectStoreNames);
+            var version = db.version;
+            var missing = neededStores.filter(function (s) {
+              return existing.indexOf(s) < 0;
+            });
+            db.close();
+            if (missing.length === 0) {
+              resolve(reopenAt(name, version));
+              return;
+            }
+            var up = indexedDB.open(name, version + 1);
+            up.onupgradeneeded = function () {
+              var udb = up.result;
+              for (var i = 0; i < missing.length; i++) {
+                if (!udb.objectStoreNames.contains(missing[i])) {
+                  udb.createObjectStore(missing[i]);
+                }
+              }
+            };
+            up.onsuccess = function () {
+              resolve(up.result);
+            };
+            up.onerror = function () {
+              reject(up.error);
+            };
+            up.onblocked = function () {
+              reject(new Error("DB upgrade blocked: " + name));
+            };
+          };
+        });
+        function reopenAt(name, v) {
+          return new Promise(function (res, rej) {
+            var r = indexedDB.open(name, v);
+            r.onsuccess = function () {
+              res(r.result);
+            };
+            r.onerror = function () {
+              rej(r.error);
+            };
+          });
+        }
+      }
+
+      function writeEntries(db, storeName, entries) {
+        return new Promise(function (resolve, reject) {
+          var tx = db.transaction(storeName, "readwrite");
+          var store = tx.objectStore(storeName);
+          for (var i = 0; i < entries.length; i++) {
+            try {
+              store.put(entries[i].value, entries[i].key);
+            } catch (_) {}
+          }
+          tx.oncomplete = function () {
+            resolve();
+          };
+          tx.onerror = function () {
+            reject(tx.error);
+          };
+          tx.onabort = function () {
+            reject(tx.error || new Error("aborted"));
+          };
+        });
+      }
+
+      // Read every "RPG ..." style save key from LS and the
+      // tcoaal-saves IDB. Used to build the pre-overwrite backup .zip.
+      var SAVE_KIND_RE = /^RPG (File\d+(?:bak)?|Global|Config)$/;
+      function bareOf(k) {
+        var ci = k.indexOf(":");
+        return ci > 0 ? k.substring(ci + 1) : k;
+      }
+      function isSaveKey(k) {
+        return typeof k === "string" && SAVE_KIND_RE.test(bareOf(k));
+      }
+
+      function readAllSaves() {
+        var out = {};
+        try {
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (isSaveKey(k)) {
+              try {
+                out[k] = localStorage.getItem(k);
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+        return new Promise(function (resolve) {
+          var req = indexedDB.open("tcoaal-saves");
+          req.onerror = function () {
+            resolve(out);
+          };
+          req.onsuccess = function () {
+            var db = req.result;
+            if (!db.objectStoreNames.contains("saves")) {
+              db.close();
+              resolve(out);
+              return;
+            }
+            try {
+              var tx = db.transaction("saves", "readonly");
+              var cur = tx.objectStore("saves").openCursor();
+              cur.onsuccess = function (e) {
+                var c = e.target.result;
+                if (c) {
+                  if (isSaveKey(c.key) && !(c.key in out)) {
+                    out[c.key] = c.value;
+                  }
+                  c.continue();
+                } else {
+                  db.close();
+                  resolve(out);
+                }
+              };
+              cur.onerror = function () {
+                db.close();
+                resolve(out);
+              };
+            } catch (_) {
+              db.close();
+              resolve(out);
+            }
+          };
+        });
+      }
+
+      // CRC32 + STORED-only. Produces an archive of plain .rpgsave files
+      // that the in-game Save / Load screen can re-import one by one.
+
+      var _zipCrcTable = null;
+      function _zipCrc32(bytes) {
+        if (!_zipCrcTable) {
+          var t = new Uint32Array(256);
+          for (var n = 0; n < 256; n++) {
+            var c = n;
+            for (var k = 0; k < 8; k++) {
+              c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+            }
+            t[n] = c >>> 0;
+          }
+          _zipCrcTable = t;
+        }
+        var crc = 0xffffffff;
+        for (var i = 0; i < bytes.length; i++) {
+          crc = _zipCrcTable[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+        }
+        return (crc ^ 0xffffffff) >>> 0;
+      }
+      function _buildZipBlob(files) {
+        var encoder = new TextEncoder();
+        var local = [],
+          cd = [],
+          offset = 0;
+        for (var fi = 0; fi < files.length; fi++) {
+          var f = files[fi];
+          var nb = encoder.encode(f.name);
+          var data = f.data,
+            crc = _zipCrc32(data),
+            size = data.length;
+          var lfh = new Uint8Array(30);
+          var lv = new DataView(lfh.buffer);
+          lv.setUint32(0, 0x04034b50, true);
+          lv.setUint16(4, 20, true);
+          lv.setUint16(6, 0x0800, true);
+          lv.setUint16(8, 0, true);
+          lv.setUint16(10, 0, true);
+          lv.setUint16(12, 0, true);
+          lv.setUint32(14, crc, true);
+          lv.setUint32(18, size, true);
+          lv.setUint32(22, size, true);
+          lv.setUint16(26, nb.length, true);
+          lv.setUint16(28, 0, true);
+          local.push(lfh, nb, data);
+          var cdr = new Uint8Array(46);
+          var cv = new DataView(cdr.buffer);
+          cv.setUint32(0, 0x02014b50, true);
+          cv.setUint16(4, 20, true);
+          cv.setUint16(6, 20, true);
+          cv.setUint16(8, 0x0800, true);
+          cv.setUint16(10, 0, true);
+          cv.setUint16(12, 0, true);
+          cv.setUint16(14, 0, true);
+          cv.setUint32(16, crc, true);
+          cv.setUint32(20, size, true);
+          cv.setUint32(24, size, true);
+          cv.setUint16(28, nb.length, true);
+          cv.setUint16(30, 0, true);
+          cv.setUint16(32, 0, true);
+          cv.setUint16(34, 0, true);
+          cv.setUint16(36, 0, true);
+          cv.setUint32(38, 0, true);
+          cv.setUint32(42, offset, true);
+          cd.push(cdr, nb);
+          offset += 30 + nb.length + size;
+        }
+        var cdSize = 0;
+        for (var cdi = 0; cdi < cd.length; cdi++) cdSize += cd[cdi].length;
+        var eocd = new Uint8Array(22);
+        var ev = new DataView(eocd.buffer);
+        ev.setUint32(0, 0x06054b50, true);
+        ev.setUint16(4, 0, true);
+        ev.setUint16(6, 0, true);
+        ev.setUint16(8, files.length, true);
+        ev.setUint16(10, files.length, true);
+        ev.setUint32(12, cdSize, true);
+        ev.setUint32(16, offset, true);
+        ev.setUint16(20, 0, true);
+        var out = new Uint8Array(offset + cdSize + 22);
+        var p = 0;
+        for (var pi = 0; pi < local.length; pi++) {
+          out.set(local[pi], p);
+          p += local[pi].length;
+        }
+        for (var pj = 0; pj < cd.length; pj++) {
+          out.set(cd[pj], p);
+          p += cd[pj].length;
+        }
+        out.set(eocd, p);
+        return out;
+      }
+      function _saveKeyArchivePath(key) {
+        var colonIdx = key.indexOf(":");
+        var modDir = "",
+          rest = key;
+        if (colonIdx > 0) {
+          modDir = key.substring(0, colonIdx).replace(/[/\\:]/g, "_") + "/";
+          rest = key.substring(colonIdx + 1);
+        }
+        var m = rest.match(/^RPG (File\d+|Global|Config)(bak)?$/);
+        if (m)
+          return modDir + m[1].toLowerCase() + (m[2] ? ".bak" : ".rpgsave");
+        return modDir + rest.replace(/[/\\:\s]/g, "_") + ".rpgsave";
+      }
+      function buildAndDownloadBackup(saves) {
+        var encoder = new TextEncoder();
+        var files = [];
+        var keys = Object.keys(saves).sort();
+        for (var i = 0; i < keys.length; i++) {
+          var k = keys[i],
+            v = saves[k];
+          if (typeof v !== "string") continue;
+          files.push({
+            name: _saveKeyArchivePath(k),
+            data: encoder.encode(v),
+          });
+        }
+        files.push({
+          name: "manifest.json",
+          data: encoder.encode(
+            JSON.stringify(
+              {
+                type: "tcoaal-pre-migration-backup",
+                version: 1,
+                createdAt: new Date().toISOString(),
+                origin: location.origin,
+                keys: keys,
+              },
+              null,
+              2,
+            ),
+          ),
+        });
+        var zipBytes = _buildZipBlob(files);
+        var blob = new Blob([zipBytes], { type: "application/zip" });
+        var url = URL.createObjectURL(blob);
+        var d = new Date();
+        function pad(n) {
+          return n < 10 ? "0" + n : "" + n;
+        }
+        var ts =
+          d.getFullYear() +
+          "-" +
+          pad(d.getMonth() + 1) +
+          "-" +
+          pad(d.getDate()) +
+          "-" +
+          pad(d.getHours()) +
+          "h" +
+          pad(d.getMinutes());
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "TCOAAL-tcoaal-app-pre-migration-" + ts + ".zip";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () {
+          URL.revokeObjectURL(url);
+        }, 30000);
+      }
+
+      var dbCache = {};
+      var totalBytes = 0;
+      var receivedBytes = 0;
+      var manifestHandled = false;
+
+      function send(msg) {
+        try {
+          window.opener.postMessage(msg, SENDER_ORIGIN);
+        } catch (e) {}
+      }
+      function setProgress(extra) {
+        receivedBytes += extra | 0;
+        if (totalBytes > 0) {
+          $bar.value = Math.min(100, (receivedBytes / totalBytes) * 100);
+        }
+        setStatus(
+          $status,
+          "Imported " +
+            formatBytes(receivedBytes) +
+            (totalBytes > 0 ? " of ~" + formatBytes(totalBytes) : ""),
+        );
+      }
+
+      function initReceiver() {
+        showPanel("receiving");
+        setStatus($status, "");
+        window.addEventListener("message", onMessage);
+        send({ type: "receiver-ready" });
+      }
+
+      async function onMessage(event) {
+        if (event.origin !== SENDER_ORIGIN) return;
+        var data = event.data;
+        if (!data || typeof data !== "object") return;
+        try {
+          switch (data.type) {
+            case "manifest":
+              if (manifestHandled) return;
+              manifestHandled = true;
+              await handleManifest(data);
+              break;
+            case "ls-entries":
+              await handleLsEntries(data);
+              break;
+            case "idb-chunk":
+              await handleIdbChunk(data);
+              break;
+            case "end":
+              await handleEnd();
+              break;
+          }
+        } catch (e) {
+          console.error("[migrate-incoming]", e);
+          setStatus($status, "Migration failed: " + (e.message || e), true);
+          setErrDetail(String((e && e.stack) || e));
+          send({ type: "receiver-error", message: String(e.message || e) });
+        }
+      }
+
+      async function handleManifest(data) {
+        totalBytes = data.totalBytes | 0 || 0;
+        $receivingText.textContent =
+          "Importing " +
+          formatBytes(totalBytes) +
+          " of saves from play-tcoaal.kidev.org...";
+
+        var existingSaves = await readAllSaves();
+        var hasExistingSaves = Object.keys(existingSaves).length > 0;
+        if (!hasExistingSaves) {
+          send({ type: "go" });
+          return;
+        }
+
+        showPanel("conflict");
+        setStatus($statusConflict, "");
+        var decision = await new Promise(function (resolve) {
+          function lock() {
+            $backupBtn.disabled = true;
+            $overwriteBtn.disabled = true;
+            $cancelBtn.disabled = true;
+          }
+          $backupBtn.addEventListener(
+            "click",
+            function () {
+              lock();
+              try {
+                buildAndDownloadBackup(existingSaves);
+                setStatus($statusConflict, "Backup downloaded. Continuing...");
+              } catch (e) {
+                setStatus(
+                  $statusConflict,
+                  "Backup failed: " + (e.message || e),
+                  true,
+                );
+                setErrDetail(String((e && e.stack) || e));
+                $backupBtn.disabled = false;
+                $overwriteBtn.disabled = false;
+                $cancelBtn.disabled = false;
+                return;
+              }
+              setTimeout(function () {
+                resolve("go");
+              }, 400);
+            },
+            { once: false },
+          );
+          $overwriteBtn.addEventListener(
+            "click",
+            function () {
+              if (
+                !window.confirm(
+                  "Continue without a backup?\n\nYour current saves on tcoaal.app will be overwritten and there will be no way to recover them.",
+                )
+              )
+                return;
+              lock();
+              resolve("go");
+            },
+            { once: false },
+          );
+          $cancelBtn.addEventListener(
+            "click",
+            function () {
+              lock();
+              resolve("cancel");
+            },
+            { once: false },
+          );
+        });
+
+        if (decision === "cancel") {
+          send({ type: "cancel" });
+          $title.textContent = "Migration cancelled";
+          $receivingText.textContent = "You can close this window.";
+          $bar.hidden = true;
+          showPanel("receiving");
+          return;
+        }
+        showPanel("receiving");
+        send({ type: "go" });
+      }
+
+      async function handleLsEntries(data) {
+        var entries = data.entries || [];
+        for (var i = 0; i < entries.length; i++) {
+          var k = entries[i][0];
+          // Defence in depth: this page only migrates saves. The current
+          // sender already filters to save-shape keys, but a stale cached
+          // copy of the old sender could still ship arbitrary localStorage.
+          // Drop anything that isn't a save so the new domain stays clean.
+          if (!isSaveKey(k)) continue;
+          try {
+            localStorage.setItem(k, entries[i][1]);
+          } catch (e) {
+            // Quota or invalid value: skip and continue, the sender's
+            // ack-based flow expects us to keep going.
+            console.warn("[migrate-incoming] LS write failed for", k, e);
+          }
+        }
+        setProgress(data.bytes);
+        send({ type: "ack", kind: "ls" });
+      }
+
+      async function handleIdbChunk(data) {
+        if (!ALLOWED_IDB_DBS[data.db]) {
+          // Silently ack and skip: we don't want to create the asset DB
+          // here, but acking keeps the sender's serial pipeline moving so
+          // the migration as a whole still completes.
+          console.warn(
+            "[migrate-incoming] dropping idb-chunk for non-saves DB:",
+            data.db,
+          );
+          setProgress(data.bytes);
+          send({ type: "ack", kind: "idb" });
+          return;
+        }
+        // Filter entries to save-shape keys only. The sender already groups
+        // chunks by DB, but a stale sender (or a future change that lumps
+        // bookkeeping keys into tcoaal-saves) could still ship mod-state
+        // keys like `__active_mod__`, `_activeMod`, `_activePlugins`, or
+        // `__mod_meta__:<id>`. Save data carries across; everything else
+        // (active mod, plugin enablement, install metadata) must reset
+        // on the new origin so the user starts with a clean mod slate.
+        var entries = (data.entries || []).filter(function (e) {
+          return e && isSaveKey(e.key);
+        });
+        if (entries.length === 0) {
+          setProgress(data.bytes);
+          send({ type: "ack", kind: "idb" });
+          return;
+        }
+        var cacheKey = data.db + "::" + data.store;
+        var db = dbCache[cacheKey];
+        if (!db) {
+          db = await openDB(data.db, [data.store]);
+          dbCache[cacheKey] = db;
+        }
+        await writeEntries(db, data.store, entries);
+        setProgress(data.bytes);
+        send({ type: "ack", kind: "idb" });
+      }
+
+      async function handleEnd() {
+        for (var key in dbCache) {
+          try {
+            dbCache[key].close();
+          } catch (_) {}
+        }
+        dbCache = {};
+        $bar.value = 100;
+        setStatus($status, "Done.");
+        showPanel("done");
+        send({ type: "done", received: receivedBytes });
+        // Opener will redirect itself shortly and may close us; if not,
+        // self-close as a safety net so the user isn't left with an
+        // orphan window.
+        setTimeout(function () {
+          try {
+            window.close();
+          } catch (_) {}
+        }, 3000);
+      }
+    </script>
+  </body>
+</html>

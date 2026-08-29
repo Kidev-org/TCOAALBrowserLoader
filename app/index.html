@@ -1,0 +1,2386 @@
+<!doctype html>
+<!--
+  TCOAAL Browser Player
+  Copyright (C) 2026 kidev
+
+  This program is free software: you can redistribute it and/or modify it
+  under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or (at your
+  option) any later version. This program is distributed in the hope that it
+  will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+  of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+  General Public License for more details: <https://www.gnu.org/licenses/>.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="viewport" content="user-scalable=no" />
+    <title>
+      The Coffin of Andy and Leyley | Play TCOAAL and mods in your Browser
+    </title>
+    <meta
+      name="description"
+      content="Play The Coffin of Andy and Leyley (TCOAAL) in your browser on desktop or mobile. Free fan-made loader with mods, overhauls and translations including The Coffin of Andrew and Renee. Requires your own copy of the game."
+    />
+    <meta
+      name="keywords"
+      content="TCOAAL, The Coffin of Andy and Leyley, play TCOAAL, TCOAAL browser, TCOAAL online, TCOAAL mobile, TCOAAL mods, TCOAAL mod loader, Coffin of Andy and Leyley browser, Nemlei, Kit9, fan mods, free TCOAAL"
+    />
+    <meta name="author" content="kidev" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#ec83c3" />
+    <meta name="application-name" content="TCOAAL Browser Player" />
+    <meta name="apple-mobile-web-app-title" content="TCOAAL" />
+    <link rel="canonical" href="https://tcoaal.app/" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="TCOAAL Browser Player" />
+    <meta property="og:url" content="https://tcoaal.app/" />
+    <meta
+      property="og:title"
+      content="Play TCOAAL in your Browser | Free game and mod loader for The Coffin of Andy and Leyley"
+    />
+    <meta
+      property="og:description"
+      content="Launch The Coffin of Andy and Leyley in any modern browser: desktop or mobile. Play fan mods, overhauls and translations. No install, files never leave your device."
+    />
+    <meta
+      property="og:image"
+      content="https://tcoaal.app/img/tcoaal-steam-header.jpg"
+    />
+    <meta property="og:image:width" content="460" />
+    <meta property="og:image:height" content="215" />
+    <meta
+      property="og:image:alt"
+      content="The Coffin of Andy and Leyley: Browser Player"
+    />
+    <meta property="og:locale" content="en_US" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Play TCOAAL in your Browser: Free browser loader"
+    />
+    <meta
+      name="twitter:description"
+      content="The Coffin of Andy and Leyley, playable in any browser. Fan mods and translations. Free, no install."
+    />
+    <meta
+      name="twitter:image"
+      content="https://tcoaal.app/img/tcoaal-steam-header.jpg"
+    />
+
+    <!-- Default to the BrowserPlayer icon during boot (game not started yet).
+         loadFavicon() swaps both to the loaded game's own icon/icon.png. -->
+    <link rel="icon" id="favicon" href="favicon.ico" type="image/x-icon" />
+    <link rel="apple-touch-icon" id="apple-icon" href="img/icon-192.png" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "VideoGame",
+        "name": "The Coffin of Andy and Leyley",
+        "alternateName": "TCOAAL",
+        "url": "https://tcoaal.app/",
+        "sameAs": "https://store.steampowered.com/app/2378900/The_Coffin_of_Andy_and_Leyley/",
+        "author": { "@type": "Organization", "name": "Kit9 Studio" },
+        "creator": { "@type": "Person", "name": "Nemlei" },
+        "publisher": { "@type": "Organization", "name": "Kit9 Studio" },
+        "genre": ["RPG", "Psychological Horror", "Adventure"],
+        "gamePlatform": [
+          "Web Browser",
+          "Windows",
+          "Android (via browser)",
+          "iOS (via browser)"
+        ],
+        "inLanguage": [
+          "en",
+          "fr",
+          "de",
+          "it",
+          "es",
+          "pt-BR",
+          "ru",
+          "uk",
+          "pl",
+          "tr",
+          "hu",
+          "ja",
+          "ko",
+          "zh"
+        ],
+        "applicationCategory": "GameApplication",
+        "operatingSystem": "Any modern web browser"
+      }
+    </script>
+    <style>
+      body {
+        background-color: black;
+        margin: 0;
+        overflow: hidden;
+      }
+      /* Splash shown while bootstrapping (SW registration + IDB check) */
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        background: #000;
+        color: #aaa;
+        font-family: "Georgia", serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        letter-spacing: 0.06em;
+        z-index: 9999;
+        transition: opacity 0.3s;
+      }
+      #boot-splash.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      /* Error overlay shown when boot fails or a runtime error occurs */
+      #boot-error {
+        position: fixed;
+        inset: 0;
+        background: #0a0a0a;
+        color: #d3d0c0;
+        font-family: "Georgia", serif;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        z-index: 10000;
+        overflow: auto;
+      }
+      #boot-error.visible {
+        display: flex;
+      }
+      #boot-error h1 {
+        color: #ec83c3;
+        font-size: 22px;
+        font-weight: normal;
+        letter-spacing: 0.05em;
+        margin: 0 0 12px;
+        text-align: center;
+      }
+      #boot-error p {
+        color: rgba(255, 255, 255, 0.75);
+        max-width: 540px;
+        line-height: 1.55;
+        margin: 0 0 16px;
+        font-size: 15px;
+        text-align: center;
+      }
+      #boot-error .err-msg {
+        max-width: 540px;
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 12px 14px;
+        color: #ff9aa2;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 0 0 18px;
+        max-height: 30vh;
+        overflow: auto;
+      }
+      #boot-error .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+      }
+      #boot-error button {
+        background: #555;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        padding: 10px 18px;
+        font-size: 15px;
+        font-family: "Georgia", serif;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      #boot-error button:hover {
+        background: #666;
+      }
+      #boot-error button.danger {
+        background: #955456;
+      }
+      #boot-error button.danger:hover {
+        background: #a8616a;
+      }
+      #boot-error .details-btn {
+        background: transparent;
+        color: #888;
+        font-size: 12px;
+        text-decoration: underline;
+        padding: 6px 10px;
+        margin-top: 14px;
+      }
+      #boot-error .details-btn:hover {
+        background: transparent;
+        color: #aaa;
+      }
+      #boot-error .diag {
+        display: none;
+        max-width: 540px;
+        margin-top: 12px;
+        font-size: 11px;
+        color: #888;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        background: #0f0f0f;
+        border: 1px solid #222;
+        border-radius: 4px;
+        padding: 10px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      #boot-error .diag.visible {
+        display: block;
+      }
+
+      /* Network status badge. In-game we only surface offline state inside
+         the Mods menu (where it matters: it gates the Install action). The
+         indicator gets two preconditions:
+            - .visible   -> page detected offline
+            - body.mods-scene-active -> Scene_Mods is on screen
+         Scene_Mods toggles the body class in start/terminate (lang-shim.js).
+         Outside Scene_Mods the indicator stays hidden even while offline. */
+      #offline-indicator {
+        position: fixed;
+        top: max(10px, env(safe-area-inset-top, 0px));
+        right: max(10px, env(safe-area-inset-right, 0px));
+        z-index: 10001;
+        background: rgba(110, 20, 30, 0.88);
+        color: #ffd5d8;
+        border: 1px solid rgba(220, 90, 100, 0.55);
+        border-radius: 999px;
+        padding: 5px 12px 6px;
+        font-family: "Georgia", serif;
+        font-size: 11px;
+        font-weight: bold;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s ease;
+        user-select: none;
+      }
+      /* offline badge is now drawn on the _helpWindow canvas in lang-shim.js */
+      #offline-indicator::before {
+        content: "";
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #ff5f6e;
+        margin-right: 7px;
+        vertical-align: 1px;
+        box-shadow: 0 0 6px rgba(255, 95, 110, 0.7);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot-splash">Loading...</div>
+
+    <div
+      id="offline-indicator"
+      role="status"
+      aria-live="polite"
+      aria-hidden="true"
+    >
+      Offline
+    </div>
+
+    <div id="boot-error">
+      <h1 id="err-title">Something went wrong</h1>
+      <p id="err-desc">
+        The game couldn't start. This is often caused by an incomplete import or
+        a stale browser cache. Clearing the loaded data and re-importing usually
+        fixes it.
+      </p>
+      <div class="err-msg" id="err-msg"></div>
+      <div class="actions">
+        <button class="danger" onclick="window.__bootClearAndReload(event)">
+          Clear and reload
+        </button>
+        <button onclick="window.__bootShowReport()">Show report</button>
+      </div>
+      <button class="details-btn" onclick="window.__bootToggleDiag()">
+        Show diagnostic info
+      </button>
+      <div class="diag" id="err-diag"></div>
+    </div>
+
+    <script>
+      /**
+       * Bootstrap: register SW, check for game files, load game scripts.
+       *
+       * On GitHub Pages the game files live in IndexedDB (imported via loader.html).
+       * The Service Worker intercepts script requests and serves them from IDB.
+       * We must ensure the SW is active BEFORE loading game scripts, otherwise
+       * the <script> requests would 404 against the static host.
+       */
+      // Offline indicator wiring. Lives outside the main IIFE so it runs
+      // even if the bootstrap below bails early (lock redirect, migration
+      // redirect, fatal exception). Reflects navigator.onLine on boot and
+      // toggles live on online/offline events.
+      (function () {
+        var el = document.getElementById("offline-indicator");
+        if (!el) return;
+        function apply(offline) {
+          el.classList.toggle("visible", offline);
+          el.setAttribute("aria-hidden", offline ? "false" : "true");
+        }
+        function probe() {
+          var ctrl = new AbortController();
+          var tid = setTimeout(function () { ctrl.abort(); }, 5000);
+          fetch("/mods.json", { method: "HEAD", cache: "no-store", signal: ctrl.signal })
+            .then(function (r) { clearTimeout(tid); apply(!r.ok); })
+            .catch(function () { clearTimeout(tid); apply(true); });
+        }
+        function update() {
+          if (navigator.onLine === false) { apply(true); return; }
+          probe();
+        }
+        update();
+        setInterval(probe, 30000);
+        try {
+          window.addEventListener("online", update);
+          window.addEventListener("offline", update);
+        } catch (e) {}
+      })();
+
+      (function () {
+        "use strict";
+
+        // Offline-cache kill switch.
+        //
+        // The Service Worker pre-caches the player's app shell so the game
+        // boots without a network (game files already live in IDB). If that
+        // cache ever serves a poisoned copy, the user can disable it by:
+        //   - visiting /?offline=off (or /?offline=on to re-enable)
+        //   - running __toggleOfflineCache(false) in the console
+        //   - setting localStorage._offlineCacheDisabled = "1"
+        //
+        // The localStorage flag is the source of truth on the page side and
+        // is mirrored to the SW via postMessage on every boot, so the SW
+        // always knows whether to use the cache.
+        (function () {
+          function applyToSW(disabled, done) {
+            try {
+              if (
+                "serviceWorker" in navigator &&
+                navigator.serviceWorker.controller
+              ) {
+                var ch = new MessageChannel();
+                ch.port1.onmessage = function () {
+                  if (done) done();
+                };
+                navigator.serviceWorker.controller.postMessage(
+                  { type: "setOfflineEnabled", enabled: !disabled },
+                  [ch.port2],
+                );
+                // Also nudge any other registrations (waiting/installing).
+                navigator.serviceWorker
+                  .getRegistration()
+                  .then(function (reg) {
+                    if (
+                      reg &&
+                      reg.active &&
+                      reg.active !== navigator.serviceWorker.controller
+                    ) {
+                      reg.active.postMessage({
+                        type: "setOfflineEnabled",
+                        enabled: !disabled,
+                      });
+                    }
+                  })
+                  .catch(function () {});
+                // Safety timeout so we never hang the boot on a missing reply.
+                setTimeout(function () {
+                  if (done) {
+                    var d = done;
+                    done = null;
+                    d();
+                  }
+                }, 1500);
+              } else if (done) {
+                done();
+              }
+            } catch (e) {
+              if (done) done();
+            }
+          }
+
+          // Expose a console-friendly toggle. Returns a promise so users can
+          // `await __toggleOfflineCache(false)` and reload.
+          window.__toggleOfflineCache = function (enabled) {
+            var disabled = enabled === false;
+            try {
+              if (disabled) {
+                localStorage.setItem("_offlineCacheDisabled", "1");
+              } else {
+                localStorage.removeItem("_offlineCacheDisabled");
+              }
+            } catch (e) {}
+            return new Promise(function (resolve) {
+              applyToSW(disabled, function () {
+                resolve({ offlineDisabled: disabled });
+              });
+            });
+          };
+
+          // URL trigger: /?offline=off disables, /?offline=on re-enables.
+          // Strip the param and reload so the rest of the bootstrap (lock
+          // check, healthcheck, etc.) re-runs with the new state.
+          try {
+            var params = new URLSearchParams(location.search);
+            var v = params.get("offline");
+            if (v === "off" || v === "on") {
+              var disabled = v === "off";
+              try {
+                if (disabled)
+                  localStorage.setItem("_offlineCacheDisabled", "1");
+                else localStorage.removeItem("_offlineCacheDisabled");
+              } catch (e) {}
+              applyToSW(disabled, function () {
+                params.delete("offline");
+                var qs = params.toString();
+                location.replace(
+                  location.pathname + (qs ? "?" + qs : "") + location.hash,
+                );
+              });
+              return; // pause the rest of the bootstrap until the reload fires
+            }
+          } catch (e) {}
+
+          // Normal boot path: mirror current flag to the SW (best-effort,
+          // non-blocking). The SW also reads the flag from IDB on first use
+          // so this message is purely a freshness signal.
+          var storedDisabled = false;
+          try {
+            try {
+              storedDisabled =
+                localStorage.getItem("_offlineCacheDisabled") === "1";
+            } catch (e) {}
+            applyToSW(storedDisabled, null);
+          } catch (e) {}
+
+          // Full-shell revalidation. Per-request network-first already keeps
+          // files the page loaded this visit in sync with remote, but it
+          // can't refresh files the page never requests (loader.html when
+          // we're on index, bg.webp, lock.html, ...). Ask the SW to re-fetch
+          // every entry in APP_SHELL once the page is idle and the user is
+          // online; the SW throttles this to once per 5 min so mashed
+          // reloads don't redownload ~2 MB each time.
+          //
+          // Skipped entirely when the kill switch is on: there's no cache to
+          // revalidate.
+          if (!storedDisabled) {
+            var sentRevalidate = false;
+            function requestShellRevalidate() {
+              if (sentRevalidate) return;
+              if (!navigator.onLine) return;
+              try {
+                if (
+                  "serviceWorker" in navigator &&
+                  navigator.serviceWorker.controller
+                ) {
+                  navigator.serviceWorker.controller.postMessage({
+                    type: "revalidateShell",
+                  });
+                  sentRevalidate = true;
+                }
+              } catch (e) {}
+            }
+            // Run when idle, with a hard timeout fallback. Also re-arm on
+            // online/visibilitychange so a tab that boots offline picks up
+            // a fresh shell the moment it comes back online.
+            if ("requestIdleCallback" in window) {
+              try {
+                window.requestIdleCallback(requestShellRevalidate, {
+                  timeout: 15000,
+                });
+              } catch (e) {
+                setTimeout(requestShellRevalidate, 8000);
+              }
+            } else {
+              setTimeout(requestShellRevalidate, 8000);
+            }
+            window.addEventListener("online", function () {
+              sentRevalidate = false;
+              requestShellRevalidate();
+            });
+            window.addEventListener("visibilitychange", function () {
+              if (document.visibilityState === "visible") {
+                // SW throttle handles dedupe; just nudge it.
+                sentRevalidate = false;
+                requestShellRevalidate();
+              }
+            });
+          }
+        })();
+
+        // Site-wide lock check. /lock.json drives a maintenance / outage
+        // screen at /lock.html; if enabled we redirect there before doing
+        // anything else. Synchronous XHR is used so the splash never has
+        // a chance to render the game UI. cache:no-store equivalent is
+        // achieved with the cachebuster query: sync XHR doesn't honour
+        // fetch options. Partial locks are short-circuited locally via
+        // a localStorage mirror written by lock.html on dismiss, so a
+        // user who already acknowledged isn't bounced through lock.html
+        // on every load.
+        try {
+          var _lx = new XMLHttpRequest();
+          _lx.open("GET", "/lock.json?_=" + Date.now(), false);
+          _lx.send();
+          if (_lx.status >= 200 && _lx.status < 300) {
+            var _lock = JSON.parse(_lx.responseText);
+            if (_lock && _lock.enabled) {
+              var _id = _lock.id || "default";
+              var _seen = null;
+              if (_lock.type === "partial") {
+                try {
+                  _seen = localStorage.getItem("__lock_dismissed__:" + _id);
+                } catch (_) {}
+              }
+              if (!_seen) {
+                location.replace(
+                  "/lock.html?return=" +
+                    encodeURIComponent(location.pathname + location.search),
+                );
+                return;
+              }
+            }
+          }
+        } catch (_) {}
+
+        // One-time translation-prefix save migration lives on its own page.
+        // If any localStorage save key still carries a "translation_*:" prefix
+        // we hand off to /migrate.html before doing anything else: that page
+        // owns the backup-zip modal and the merge, and isn't fighting the
+        // game's PIXI canvas / boot-splash / LOADING image for the screen.
+        // location.replace keeps it out of session history.
+        //
+        // After a successful migration migrate.html sets the flag
+        // `_migration_translation_done`. With that flag present we never
+        // redirect again: any straggler translation_<id>:* key is silently
+        // dropped (it can only be an orphan that slipped past the merge's
+        // sweep: it would otherwise re-trigger this redirect on every
+        // boot, which is exactly the regression the flag is here to stop).
+        try {
+          var _migrationDone = false;
+          try {
+            _migrationDone = !!localStorage.getItem(
+              "_migration_translation_done",
+            );
+          } catch (_) {}
+          var _stragglers = [];
+          var _needsMigrate = false;
+          for (var _mi = 0; _mi < localStorage.length; _mi++) {
+            var _mk = localStorage.key(_mi);
+            if (typeof _mk !== "string") continue;
+            if (!/^translation_[^:]+:/.test(_mk)) continue;
+            _stragglers.push(_mk);
+            if (
+              !_migrationDone &&
+              /^translation_[^:]+:RPG (?:File\d+(?:bak)?|Global|Config)$/.test(
+                _mk,
+              )
+            ) {
+              _needsMigrate = true;
+            }
+          }
+          if (_needsMigrate) {
+            location.replace("/migrate.html");
+            return;
+          }
+          if (_migrationDone && _stragglers.length > 0) {
+            for (var _si = 0; _si < _stragglers.length; _si++) {
+              try {
+                localStorage.removeItem(_stragglers[_si]);
+              } catch (_) {}
+            }
+            // Mirror the LS purge into tcoaal-saves so a future
+            // restoreSavesFromIDB pass can't bring the stragglers back.
+            // Best-effort and async: failures are silently ignored, since
+            // the LS purge above already addresses the user-visible symptom
+            // (the loader export reads LS only).
+            try {
+              var _sReq = indexedDB.open("tcoaal-saves", 1);
+              _sReq.onupgradeneeded = function (e) {
+                try {
+                  e.target.result.createObjectStore("saves");
+                } catch (_) {}
+              };
+              _sReq.onsuccess = function (e) {
+                var _db = e.target.result;
+                _openIdbConns.push(_db);
+                try {
+                  var _rtx = _db.transaction("saves", "readonly");
+                  var _kr = _rtx.objectStore("saves").getAllKeys();
+                  _kr.onsuccess = function () {
+                    var _keys = _kr.result || [];
+                    var _doom = [];
+                    for (var _ki = 0; _ki < _keys.length; _ki++) {
+                      var _ik = _keys[_ki];
+                      if (
+                        typeof _ik === "string" &&
+                        /^translation_[^:]+:/.test(_ik)
+                      ) {
+                        _doom.push(_ik);
+                      }
+                    }
+                    if (_doom.length === 0) return;
+                    try {
+                      var _wtx = _db.transaction("saves", "readwrite");
+                      var _st = _wtx.objectStore("saves");
+                      for (var _di = 0; _di < _doom.length; _di++) {
+                        try {
+                          _st.delete(_doom[_di]);
+                        } catch (_) {}
+                      }
+                    } catch (_) {}
+                  };
+                } catch (_) {}
+              };
+            } catch (_) {}
+          }
+        } catch (_) {}
+
+        var DB_NAME = "tcoaal";
+        var DB_VERSION = 1;
+        var STORE_NAME = "assets";
+        var SAVE_DB_NAME = "tcoaal-saves";
+        var TRANSLATIONS_DB_NAME = "tcoaal-translations";
+        var CLD_KEY = "data/9c7050ae76645487";
+        var LANG_CACHE_KEY = "__lang_data__";
+        // Pre-remaster builds store their languages/<lang>/dialogue.loc verbatim
+        // and record its path here; the .loc is parsed on the fly (loadOldCld).
+        var OLD_CLD_PATH_KEY = "__old_cld_path__";
+        var K9A_LOC_SIG = "00000NEMLEI00000";
+        // Mirrors loader.html's SAVE_KEY_RE exactly, keep both in sync.
+        var SAVE_KEY_RE = /(?:^|:)RPG (?:File\d+|Global|Config|Auto\d+)$/;
+        // API-count bookkeeping: lang-shim's _countedMods / backfill tries, and
+        // achievements-shim's _achvPlayerCounted / _achvReported. These guard
+        // against re-counting an install, a player or an achievement to the
+        // API, so our own "Clear browser data" buttons must NEVER erase them -
+        // not even on a full ctrl/cmd+click wipe. The only sanctioned reset is
+        // the browser's native site-data controls. Mirrors loader.html's copy,
+        // keep in sync.
+        var INSTALL_FLAG_RE =
+          /^_(?:countedMods|countBackfillTries|achvPlayerCounted|achvReported)$/;
+
+        // Every IndexedDB connection this page opens is tracked here so the
+        // clear-and-reload flow can close them first. An open connection
+        // blocks `deleteDatabase` (it fires `onblocked` and never completes),
+        // which is what left the recovery button frozen on "Clearing...".
+        var _openIdbConns = [];
+
+        var splash = document.getElementById("boot-splash");
+        var errOverlay = document.getElementById("boot-error");
+        var errTitle = document.getElementById("err-title");
+        var errDesc = document.getElementById("err-desc");
+        var errMsg = document.getElementById("err-msg");
+        var errDiag = document.getElementById("err-diag");
+
+        var bootPhase = "init";
+        var bootDone = false;
+
+        function setSplash(msg) {
+          splash.textContent = msg;
+        }
+
+        function setPhase(name, label) {
+          bootPhase = name;
+          setSplash(label);
+        }
+
+        function buildDiagnostics(err) {
+          var lines = [];
+          lines.push("Phase: " + bootPhase);
+          lines.push("UA: " + (navigator.userAgent || "?"));
+          lines.push("URL: " + location.href);
+          lines.push(
+            "SW: " +
+              ("serviceWorker" in navigator
+                ? navigator.serviceWorker.controller
+                  ? "controlled"
+                  : "registered/uncontrolled"
+                : "unsupported"),
+          );
+          if (err) {
+            if (err.message) lines.push("Error: " + err.message);
+            else lines.push("Error: " + String(err));
+            if (err.stack) lines.push("Stack: " + err.stack);
+          }
+          return lines.join("\n");
+        }
+
+        // Always shows the overlay, regardless of boot state. Exposed for
+        // App.crash (browser-shim.js) to reuse post-boot, since the game has
+        // no crash UI of its own for a DRM-detected fatal error.
+        function showErrorForce(title, desc, err) {
+          if (errOverlay.classList.contains("visible")) return; // first error wins
+          if (title) errTitle.textContent = title;
+          if (desc) errDesc.textContent = desc;
+          var msg = err
+            ? err.message || String(err)
+            : "Boot failed during phase: " + bootPhase;
+          errMsg.textContent = msg;
+          errDiag.textContent = buildDiagnostics(err);
+          errOverlay.classList.add("visible");
+          // Hide splash so error is the only thing visible.
+          splash.classList.add("hidden");
+        }
+        window.__showFatalError = showErrorForce;
+
+        function showError(title, desc, err) {
+          if (bootDone) return; // ignore post-boot errors (game owns them)
+          showErrorForce(title, desc, err);
+        }
+
+        // Clear all persisted state and send the user back to the loader.
+        //
+        // Order matters: the Service Worker keeps its own open connection
+        // to the `tcoaal` database. If we call deleteDatabase while the SW
+        // still holds it, the request stalls in `onblocked` and silently
+        // resolves but the DB isn't actually gone, so loader.html reads
+        // back stale (or partially-deleted) keys and bounces straight back
+        // to the same error. We therefore:
+        //   1) unregister the SW (releases its IDB handle)
+        //   2) clear caches
+        //   3) clear localStorage
+        //   4) wait for deleteDatabase to truly complete (success only;
+        //      onblocked means something is still holding it open)
+        //   5) replace into loader.html
+        // Core wipe used by both the manual "Clear" button and the automatic
+        // legacy-decoded migration (migrateLegacyDecoded). Removes the game +
+        // translation IDB and non-save localStorage; saves (localStorage save
+        // keys + the tcoaal-saves DB) survive unless wipeSaves is true. Does NOT
+        // redirect or touch UI, so callers control what happens next.
+        async function wipeGameDataKeepSaves(wipeSaves) {
+          // 1. Unregister all SWs first so they release their IDB handle.
+          if ("serviceWorker" in navigator) {
+            try {
+              var regs = await navigator.serviceWorker.getRegistrations();
+              await Promise.all(
+                regs.map(function (r) {
+                  return r.unregister();
+                }),
+              );
+            } catch (e) {}
+          }
+
+          // 2. Caches.
+          if ("caches" in self) {
+            try {
+              var keys = await caches.keys();
+              await Promise.all(
+                keys.map(function (k) {
+                  return caches.delete(k);
+                }),
+              );
+            } catch (e) {}
+          }
+
+          // 3. localStorage. Preserve save keys unless the caller opted into
+          // wiping them, and always preserve install-count flags.
+          try {
+            var keysToRemove = [];
+            for (var i = 0; i < localStorage.length; i++) {
+              var k = localStorage.key(i);
+              if (!k) continue;
+              if (INSTALL_FLAG_RE.test(k)) continue;
+              if (!wipeSaves && SAVE_KEY_RE.test(k)) continue;
+              keysToRemove.push(k);
+            }
+            keysToRemove.forEach(function (k) {
+              localStorage.removeItem(k);
+            });
+          } catch (e) {}
+
+          // 3b. Close every IndexedDB connection this page opened. An open
+          // connection makes deleteDatabase block indefinitely (onblocked,
+          // never onsuccess), which is what froze the button on "Clearing...".
+          for (var _ci = 0; _ci < _openIdbConns.length; _ci++) {
+            try {
+              _openIdbConns[_ci].close();
+            } catch (e) {}
+          }
+          _openIdbConns.length = 0;
+
+          // 4. Delete the IDB databases. Resolve on success; if the request is
+          // blocked, wait a short while and retry once (the SW takes a tick to
+          // fully detach). If still blocked after that, proceed anyway.
+          function dropDb(name) {
+            return new Promise(function (resolve) {
+              function attempt(retries) {
+                var settled = false;
+                var req;
+                try {
+                  req = indexedDB.deleteDatabase(name);
+                } catch (e) {
+                  return resolve();
+                }
+                req.onsuccess = function () {
+                  settled = true;
+                  resolve();
+                };
+                req.onerror = function () {
+                  settled = true;
+                  resolve();
+                };
+                req.onblocked = function () {
+                  if (settled) return;
+                  if (retries > 0) {
+                    settled = true;
+                    setTimeout(function () {
+                      attempt(retries - 1);
+                    }, 250);
+                  } else {
+                    settled = true;
+                    resolve();
+                  }
+                };
+              }
+              attempt(2);
+            });
+          }
+          await dropDb(DB_NAME);
+          if (wipeSaves) await dropDb(SAVE_DB_NAME);
+          await dropDb(TRANSLATIONS_DB_NAME);
+        }
+
+        window.__bootClearAndReload = async function (e) {
+          var wipeSaves = !!(e && (e.ctrlKey || e.metaKey));
+          if (wipeSaves) {
+            var ok = window.confirm(
+              "This will also permanently delete your save files. This " +
+                "cannot be undone.\n\nClick Cancel to keep your saves and " +
+                "only clear the game/translation data instead.",
+            );
+            if (!ok) return;
+          }
+
+          var btn = errOverlay.querySelector("button.danger");
+          if (btn) {
+            btn.disabled = true;
+            btn.textContent = "Clearing...";
+          }
+
+          await wipeGameDataKeepSaves(wipeSaves);
+
+          // Done. Surface it on the button so the user knows the wipe
+          // finished, then reload into the loader. The SW we unregistered
+          // still controls this page until it unloads, so it can swallow the
+          // navigation: guard with a hard reload fallback so the user is never
+          // stranded on a dead error page with a frozen "Clearing..." button.
+          if (btn) {
+            btn.disabled = true;
+            btn.textContent = "Reloading...";
+          }
+          location.replace("/loader.html");
+          setTimeout(function () {
+            location.reload();
+          }, 1500);
+        };
+
+        // "Show report" (both the pre-boot #boot-error overlay and the
+        // post-boot DRM-crash reuse of it, App.crash in browser-shim.js)
+        // stash what's known about the failure and hand off to loader.html's
+        // #report panel. Unlike __bootClearAndReload, this never clears
+        // anything, the report needs live state to diagnose.
+        window.__bootShowReport = function () {
+          var payload = {
+            source: bootDone ? "drm-crash" : "boot-error",
+            title: errTitle.textContent || "",
+            message: errMsg.textContent || "",
+            phase: bootPhase,
+            timestamp: Date.now(),
+          };
+          if (typeof window.__quitToLoader === "function") {
+            // browser-shim.js has loaded: reuse its teardown (stops the
+            // scene loop / audio if a game is actually running) + stash +
+            // redirect in one call.
+            window.__quitToLoader(payload);
+            return;
+          }
+          try {
+            sessionStorage.setItem(
+              "__crash_report__",
+              JSON.stringify(payload),
+            );
+          } catch (e) {}
+          window.location.href = "/loader.html#report";
+        };
+
+        window.__bootToggleDiag = function () {
+          errDiag.classList.toggle("visible");
+        };
+
+        // Catch uncaught errors during boot. Once the game is running we
+        // get out of the way (game owns its own crash UI from then on).
+        window.addEventListener("error", function (e) {
+          if (bootDone) return;
+          showError(
+            "Game failed to start",
+            "An unexpected error happened while loading the game. " +
+              "Clearing the imported data and re-importing usually fixes it.",
+            e.error || { message: e.message },
+          );
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+          if (bootDone) return;
+          showError(
+            "Game failed to start",
+            "An unexpected error happened while loading the game. " +
+              "Clearing the imported data and re-importing usually fixes it.",
+            e.reason,
+          );
+        });
+
+        // Auto-recovery for users stuck on a stale Service Worker.
+        //
+        // The page asks the controlling SW for its SW_VERSION and compares
+        // against EXPECTED_SW_VERSION below. Three outcomes:
+        //
+        //   1. Reply with version >= EXPECTED -> up to date, do nothing.
+        //   2. Reply with version <  EXPECTED -> SW is on a known-stale
+        //      build, recover immediately.
+        //   3. No reply within 3 s -> SW predates the getVersion handler
+        //      (i.e. the original broken interceptor). Recover.
+        //
+        // Recovery = unregister every SW registration and reload. The
+        // reload happens without a controller, so the browser fetches
+        // /sw.js natively (bypassing whatever interception the old SW had)
+        // and the new SW installs cleanly. From then on, future updates
+        // land normally because the new SW does not intercept /sw.js.
+        //
+        // Bump this constant in lockstep with SW_VERSION in app/sw.js
+        // whenever an SW change requires existing users to drop their
+        // previous install. Pure additive features don't need a bump.
+        var EXPECTED_SW_VERSION = 15;
+
+        function maybeRecoverStaleSW() {
+          if (!("serviceWorker" in navigator)) return;
+          var RECOVERY_KEY = "__sw_recovery_attempted__";
+          try {
+            if (sessionStorage.getItem(RECOVERY_KEY)) return;
+          } catch (e) {}
+
+          var done = false;
+          function recover(reason) {
+            if (done) return;
+            done = true;
+            console.warn(
+              "[boot] Recovering from stale Service Worker:",
+              reason,
+            );
+            try {
+              sessionStorage.setItem(RECOVERY_KEY, "1");
+            } catch (e) {}
+            navigator.serviceWorker
+              .getRegistrations()
+              .then(function (regs) {
+                return Promise.all(
+                  regs.map(function (r) {
+                    return r.unregister().catch(function () {});
+                  }),
+                );
+              })
+              .then(function () {
+                location.reload();
+              })
+              .catch(function () {
+                location.reload();
+              });
+          }
+
+          function queryVersion() {
+            var ctrl = navigator.serviceWorker.controller;
+            if (!ctrl) return;
+            try {
+              var ch = new MessageChannel();
+              ch.port1.onmessage = function (ev) {
+                if (done) return;
+                var v = ev && ev.data && ev.data.version;
+                if (typeof v === "number" && v >= EXPECTED_SW_VERSION) {
+                  // Up to date. Mark done so the timeout is a no-op.
+                  done = true;
+                } else {
+                  recover("SW version " + v + " < " + EXPECTED_SW_VERSION);
+                }
+              };
+              ctrl.postMessage({ type: "getVersion" }, [ch.port2]);
+            } catch (e) {}
+          }
+
+          // Probe immediately; re-probe if a new SW claims the page mid-
+          // check (rare race where the browser successfully updated but
+          // the old SW was still the controller at the moment we asked).
+          queryVersion();
+          function onCC() {
+            queryVersion();
+          }
+          try {
+            navigator.serviceWorker.addEventListener("controllerchange", onCC);
+          } catch (e) {}
+
+          setTimeout(function () {
+            try {
+              navigator.serviceWorker.removeEventListener(
+                "controllerchange",
+                onCC,
+              );
+            } catch (e) {}
+            if (done) return;
+            // No controller at all = first visit, nothing to recover.
+            if (!navigator.serviceWorker.controller) return;
+            recover("no getVersion reply within 3s");
+          }, 3000);
+        }
+
+        // Step 1: register & activate the Service Worker
+        function ensureSW() {
+          if (!("serviceWorker" in navigator)) {
+            return Promise.resolve();
+          }
+          // Fire recovery check in parallel with registration. If the page
+          // is controlled by a stale SW, the timer will trigger an
+          // unregister + reload before the bootstrap proceeds further.
+          maybeRecoverStaleSW();
+          return navigator.serviceWorker
+            .register("/sw.js", { scope: "/" })
+            .then(function (reg) {
+              reg.update().catch(function (err) {
+                // Surface the failure but don't throw: the active SW (if
+                // any) keeps serving and recovery handles the stuck case.
+                console.warn("[boot] reg.update() failed:", err && err.message);
+              });
+              // If a new SW is already waiting (browser fetched the new
+              // script behind the scenes), tell it to take over now.
+              if (reg.waiting) {
+                try {
+                  reg.waiting.postMessage({ type: "skipWaiting" });
+                } catch (e) {}
+              }
+              if (navigator.serviceWorker.controller) {
+                // Controlled load: clear the reclaim guard so a later
+                // hard reload in this same session gets its own attempt.
+                try {
+                  sessionStorage.removeItem("__swReclaimTried");
+                } catch (e) {}
+                return Promise.resolve();
+              }
+              // Hard reload (Ctrl/Shift+F5) bypasses the Service Worker for
+              // the navigation AND every subresource it triggers, so the
+              // page loads uncontrolled even though the SW is active. Our
+              // engine JS and assets live only in IDB (served + decrypted by
+              // the SW), so those fetches hit the network and fail -> black
+              // screen until a plain F5 reloads under SW control.
+              //
+              // Detect that case: an *active* SW exists but isn't
+              // controlling us: and reload once to reclaim control. The
+              // reg.active check distinguishes a hard reload from a genuine
+              // first visit (where being uncontrolled is normal and we must
+              // proceed to load scripts via the network/server). A
+              // sessionStorage guard prevents a reload loop if control can't
+              // be regained for some other reason.
+              if (reg.active) {
+                var reclaimTried = false;
+                try {
+                  reclaimTried =
+                    sessionStorage.getItem("__swReclaimTried") === "1";
+                } catch (e) {}
+                if (!reclaimTried) {
+                  try {
+                    sessionStorage.setItem("__swReclaimTried", "1");
+                  } catch (e) {}
+                  location.reload();
+                  // Halt the bootstrap: the reload is on its way.
+                  return new Promise(function () {});
+                }
+              }
+              // Wait for the SW to take control (skipWaiting + claim)
+              return new Promise(function (resolve) {
+                navigator.serviceWorker.addEventListener(
+                  "controllerchange",
+                  resolve,
+                  { once: true },
+                );
+                // Timeout: if SW doesn't claim in 3s, proceed anyway
+                setTimeout(resolve, 3000);
+              });
+            })
+            .catch(function (e) {
+              console.warn("[boot] SW registration failed:", e);
+            });
+        }
+
+        // IDB helpers (raw promises, no shared connection)
+        function idbOpen() {
+          return new Promise(function (resolve, reject) {
+            try {
+              var req = indexedDB.open(DB_NAME, DB_VERSION);
+              req.onupgradeneeded = function (e) {
+                e.target.result.createObjectStore(STORE_NAME);
+              };
+              req.onsuccess = function (e) {
+                _openIdbConns.push(e.target.result);
+                resolve(e.target.result);
+              };
+              req.onerror = function (e) {
+                reject(e.target.error || new Error("IndexedDB open failed"));
+              };
+            } catch (ex) {
+              reject(ex);
+            }
+          });
+        }
+
+        function idbGet(db, key) {
+          return new Promise(function (resolve) {
+            try {
+              var tx = db.transaction(STORE_NAME, "readonly");
+              var req = tx.objectStore(STORE_NAME).get(key);
+              req.onsuccess = function () {
+                resolve(req.result == null ? null : req.result);
+              };
+              req.onerror = function () {
+                resolve(null);
+              };
+            } catch (e) {
+              resolve(null);
+            }
+          });
+        }
+
+        function idbPut(db, key, value) {
+          return new Promise(function (resolve) {
+            try {
+              var tx = db.transaction(STORE_NAME, "readwrite");
+              var req = tx.objectStore(STORE_NAME).put(value, key);
+              req.onsuccess = resolve;
+              req.onerror = resolve;
+            } catch (e) {
+              resolve();
+            }
+          });
+        }
+
+        function idbDelete(db, key) {
+          return new Promise(function (resolve) {
+            try {
+              var tx = db.transaction(STORE_NAME, "readwrite");
+              var req = tx.objectStore(STORE_NAME).delete(key);
+              req.onsuccess = resolve;
+              req.onerror = resolve;
+            } catch (e) {
+              resolve();
+            }
+          });
+        }
+
+        // Enumerate every key under "prefix" in one transaction (getAllKeys
+        // over a bounded range). Used by the mod-completeness check to diff a
+        // mod's stored files against its manifest without a get() per file.
+        function idbGetAllKeys(db, prefix) {
+          return new Promise(function (resolve) {
+            try {
+              var tx = db.transaction(STORE_NAME, "readonly");
+              var range = IDBKeyRange.bound(prefix, prefix + "\uffff");
+              var req = tx.objectStore(STORE_NAME).getAllKeys(range);
+              req.onsuccess = function () {
+                resolve(req.result || []);
+              };
+              req.onerror = function () {
+                resolve([]);
+              };
+            } catch (e) {
+              resolve([]);
+            }
+          });
+        }
+
+        // Migrate installs made before game content was kept encrypted at rest
+        // (see project decode-on-the-fly). Two legacy shapes, distinguished by
+        // their IDB bookkeeping keys:
+        //
+        //   - Legacy REMASTER: the only decoded artifact is the __lang_data__
+        //     plaintext script cache; the assets were always encrypted and the
+        //     encrypted CLD (CLD_KEY) is still present. So just DELETE the cache
+        //     key (the SW/preload decrypt the CLD on the fly) and boot on. No
+        //     re-import. Signal: __lang_data__ present, __oldhashmap__ absent.
+        //
+        //   - Legacy OLD BUILD (Ep1/Ep2): the whole game was stored DECODED
+        //     (plain data/img/audio) and cannot be re-encrypted in place, so wipe
+        //     the game data (saves are kept) and send the user to re-import. New
+        //     old builds carry __old_cld_path__; legacy ones do not. Signal:
+        //     __oldhashmap__ present, __old_cld_path__ absent.
+        //
+        // Resolves "reimport" when it wiped + redirected (caller must stop boot),
+        // else "cleaned"/"none" to continue.
+        function migrateLegacyDecoded(db) {
+          return Promise.all([
+            idbGet(db, "__oldhashmap__"),
+            idbGet(db, OLD_CLD_PATH_KEY),
+            idbGet(db, LANG_CACHE_KEY),
+            idbGet(db, CLD_KEY),
+          ]).then(function (r) {
+            var hasOldMap = !!r[0];
+            var hasOldCldPtr = !!r[1];
+            var hasLangCache = !!r[2];
+            var hasEncryptedCld = !!r[3];
+
+            if (hasOldMap && !hasOldCldPtr) {
+              // Legacy decoded old build: wipe game data (keep saves) and ask
+              // for a fresh import. Flag the reason so the loader can explain it.
+              try {
+                sessionStorage.setItem("__reimport_notice__", "legacy-decoded");
+              } catch (e) {}
+              setPhase("migrate", "Updating stored game data...");
+              return wipeGameDataKeepSaves(false).then(function () {
+                location.replace("/loader.html");
+                return "reimport";
+              });
+            }
+
+            // Legacy remaster: drop the plaintext script cache; boot decrypts
+            // the still-present encrypted CLD on the fly. Guard on that CLD
+            // actually being present so we never remove the ONLY lang source
+            // from an oddly-imported install and break a working game.
+            if (hasLangCache && !hasOldMap && hasEncryptedCld) {
+              return idbDelete(db, LANG_CACHE_KEY).then(function () {
+                return "cleaned";
+              });
+            }
+
+            return "none";
+          });
+        }
+
+        // Step 2: check whether game files are available (IDB or server.js).
+        // We require BOTH a script file (rpg_core.js) and a way to get the
+        // language data: either pre-extracted JSON in __lang_data__ or the
+        // encrypted CLD file. Missing pieces produce a clear error instead
+        // of letting the DRM crash with an obfuscated trace.
+        function checkGameFiles(db) {
+          return Promise.all([
+            idbGet(db, "js/rpg_core.js"),
+            idbGet(db, LANG_CACHE_KEY),
+            idbGet(db, CLD_KEY),
+            idbGet(db, OLD_CLD_PATH_KEY),
+          ]).then(function (results) {
+            var hasCore = !!results[0];
+            var hasLangCache = !!results[1];
+            var hasEncryptedCld = !!results[2];
+            // Old (pre-remaster) builds have neither the __lang_data__ cache nor
+            // the remaster CLD; their language lives in the .loc the pointer
+            // names, decoded on the fly. Treat that as valid lang data.
+            var hasOldCld = !!results[3];
+            return {
+              hasCore: hasCore,
+              hasLangCache: hasLangCache,
+              hasEncryptedCld: hasEncryptedCld,
+              hasOldCld: hasOldCld,
+              hasAnyLang: hasLangCache || hasEncryptedCld || hasOldCld,
+            };
+          });
+        }
+
+        // Healthcheck against the canonical manifest. If anything is
+        // missing, kick the user over to /loader.html so they land on the
+        // manage UI (with the missing-files warning + Play button).
+        // Bugged installs no longer need to know the loader URL to
+        // recover; clean installs go straight into the game.
+        // Resolves true when complete (or when the manifest can't be
+        // loaded: we don't gate boot on a missing manifest).
+        function healthcheckOk(db) {
+          return fetch("/expected-files.json", { cache: "no-cache" })
+            .then(function (r) {
+              return r.ok ? r.json() : null;
+            })
+            .catch(function () {
+              return null;
+            })
+            .then(function (manifest) {
+              if (!manifest || !Array.isArray(manifest.files)) return true;
+              // The manifest lists ONE version's hashed filenames
+              // (manifest.targetVersion). A different, known imported version
+              // has different hashes, so the file check doesn't apply; skip
+              // it (the loader shows a version notice) rather than bouncing the
+              // user here on every navigation.
+              var target = manifest.targetVersion;
+              if (target) {
+                return idbGet(db, "js/main.js").then(function (raw) {
+                  var version = "";
+                  if (raw != null) {
+                    try {
+                      var bytes =
+                        raw instanceof Uint8Array ? raw : new Uint8Array(raw);
+                      var txt = new TextDecoder("utf-8").decode(bytes);
+                      var m = txt.match(/GAME_VERSION\s*=\s*["']([^"']+)["']/);
+                      version = (m && m[1].trim()) || "";
+                    } catch (e) {}
+                  }
+                  if (version && version !== target) return true;
+                  return checkManifestFiles(db, manifest);
+                });
+              }
+              return checkManifestFiles(db, manifest);
+            });
+        }
+
+        // Resolve true iff every file the manifest lists is present in IDB.
+        function checkManifestFiles(db, manifest) {
+          return new Promise(function (resolve) {
+            try {
+              var req = db
+                .transaction("assets", "readonly")
+                .objectStore("assets")
+                .getAllKeys();
+              req.onsuccess = function () {
+                var keys = req.result || [];
+                var present = new Set();
+                for (var i = 0; i < keys.length; i++) {
+                  if (typeof keys[i] === "string") {
+                    present.add(keys[i].toLowerCase());
+                  }
+                }
+                for (var j = 0; j < manifest.files.length; j++) {
+                  if (!present.has(manifest.files[j].toLowerCase())) {
+                    resolve(false);
+                    return;
+                  }
+                }
+                resolve(true);
+              };
+              req.onerror = function () {
+                resolve(true);
+              };
+            } catch (e) {
+              resolve(true);
+            }
+          });
+        }
+
+        // Check whether server.js mode is serving the game (no IDB needed).
+        function checkServer() {
+          return fetch("js/rpg_core.js", { method: "HEAD" })
+            .then(function (r) {
+              return r.ok && r.headers.get("content-type") !== "text/html";
+            })
+            .catch(function () {
+              return false;
+            });
+        }
+
+        // CLD synchronous decryption: avoids any dependency on the SW being
+        // ready by decrypting the bytes ourselves and stashing the JSON in
+        // window.__langData. Mirrors the logic in loader.html / sw.js.
+        var TCOAAL_SIG = [84, 67, 79, 65, 65, 76]; // "TCOAAL"
+
+        function fileMaskFor(hashedRelPath) {
+          var fname = hashedRelPath.split("/").pop().toUpperCase();
+          var m = 0;
+          for (var i = 0; i < fname.length; i++)
+            m = (m << 1) ^ fname.charCodeAt(i);
+          return m;
+        }
+
+        function decryptCld(arrayBuffer) {
+          var bytes = new Uint8Array(arrayBuffer);
+          if (bytes.length < TCOAAL_SIG.length + 1) return bytes;
+          for (var i = 0; i < TCOAAL_SIG.length; i++) {
+            if (bytes[i] !== TCOAAL_SIG[i]) return bytes;
+          }
+          var keyByte = bytes[TCOAAL_SIG.length];
+          var payload = bytes.subarray(TCOAAL_SIG.length + 1);
+          var mask = (fileMaskFor(CLD_KEY) + 1) & 0xff;
+          if (keyByte === 0) keyByte = payload.length;
+          var out = new Uint8Array(payload.length);
+          for (var j = 0; j < payload.length; j++) {
+            if (j < keyByte) {
+              var b = payload[j];
+              out[j] = b ^ mask;
+              mask = ((mask << 1) ^ b) & 0xff;
+            } else {
+              out[j] = payload[j];
+            }
+          }
+          return out;
+        }
+
+        function extractLangFromCld(rawCld) {
+          var buf = rawCld;
+          if (rawCld instanceof Blob) {
+            // Blob -> ArrayBuffer is async, handle separately via promise
+            return rawCld.arrayBuffer().then(function (ab) {
+              return extractLangFromCld(ab);
+            });
+          }
+          if (rawCld && rawCld.buffer instanceof ArrayBuffer) {
+            buf = rawCld.buffer;
+          }
+          var decrypted = decryptCld(buf);
+          if (!decrypted || decrypted.length < 9) return null;
+          var sig = new TextDecoder().decode(decrypted.slice(0, 8));
+          if (sig !== "LANGDATA") return null;
+          var jsonStr = new TextDecoder().decode(decrypted.slice(8));
+          try {
+            JSON.parse(jsonStr);
+            return jsonStr;
+          } catch (e) {
+            return null;
+          }
+        }
+
+        // Old build: parse a NEMLEI-wrapped (or plain-JSON) .loc buffer to its
+        // JSON text. Mirrors loader.html/sw.js parseLocText().
+        function parseLocText(buf) {
+          var bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+          var sig = new TextDecoder("latin1").decode(
+            bytes.subarray(0, K9A_LOC_SIG.length),
+          );
+          if (bytes.length >= K9A_LOC_SIG.length + 4 && sig === K9A_LOC_SIG) {
+            var off = K9A_LOC_SIG.length;
+            var view = new DataView(
+              bytes.buffer,
+              bytes.byteOffset,
+              bytes.byteLength,
+            );
+            var len = view.getUint32(off, true);
+            return new TextDecoder("utf-8").decode(
+              bytes.subarray(off + 4, off + 4 + len),
+            );
+          }
+          return new TextDecoder("utf-8").decode(bytes);
+        }
+
+        // Old build: read the .loc named by OLD_CLD_PATH_KEY and parse it to a
+        // JSON string on the fly (no plain script stored at rest). Resolves to
+        // the string, or null.
+        function loadOldCldInline(db) {
+          return idbGet(db, OLD_CLD_PATH_KEY).then(function (cldPath) {
+            if (!cldPath || typeof cldPath !== "string") return null;
+            return idbGet(db, cldPath).then(function (raw) {
+              if (!raw) return null;
+              function done(ab) {
+                try {
+                  var text = parseLocText(ab);
+                  JSON.parse(text);
+                  return text;
+                } catch (e) {
+                  return null;
+                }
+              }
+              if (raw instanceof Blob) return raw.arrayBuffer().then(done);
+              return done(raw);
+            });
+          });
+        }
+
+        // Preload language data into a global so browser-shim.js can serve it
+        // synchronously to the DRM payload.
+        //
+        // When a mod is active the CLD served to the DRM must be the MERGE of
+        // base + mod data: the mod's own CSV-parsed data is missing required
+        // CLD fields. The SW implements that merge on /lang-data.json, so we
+        // fetch through it instead of reading IDB directly.
+        //
+        // Without an active mod we prefer __lang_data__ in IDB (fastest), then
+        // fall back to decrypting the encrypted CLD ourselves (no SW needed),
+        // then finally /lang-data.json. The middle step is critical on mobile
+        // where the SW can be slow to claim.
+        function preloadLangData(db, files) {
+          var activeMod = null;
+          var activeLang = null;
+          try {
+            activeMod = localStorage.getItem("_activeMod") || null;
+            activeLang = localStorage.getItem("_activeLang") || null;
+          } catch (e) {}
+
+          function fromLangDataJson() {
+            return fetch("/lang-data.json", { cache: "no-store" })
+              .then(function (res) {
+                return res.ok ? res.text() : null;
+              })
+              .then(function (text) {
+                if (text && typeof text === "string") {
+                  window.__langData = text;
+                }
+              })
+              .catch(function () {});
+          }
+
+          if (activeMod || activeLang) {
+            // An overhaul and/or a translation overlay is active: the SW
+            // produces the layered merge (base -> overhaul -> translation) on
+            // /lang-data.json, so always go through it rather than reading a
+            // single IDB blob.
+            return fromLangDataJson();
+          }
+
+          // 1. Pre-extracted JSON in IDB (fastest, no SW required).
+          if (files && files.hasLangCache) {
+            return idbGet(db, LANG_CACHE_KEY).then(function (data) {
+              if (data && typeof data === "string") {
+                window.__langData = data;
+                return;
+              }
+              // unexpected type -> fall through
+              return decryptInline();
+            });
+          }
+
+          // 1b. Old build: parse the .loc inline (no SW required), same as the
+          //     remaster's inline CLD decrypt below. Falls back to the SW route.
+          if (files && files.hasOldCld) {
+            return loadOldCldInline(db).then(function (json) {
+              if (json) {
+                window.__langData = json;
+                return;
+              }
+              return fromLangDataJson();
+            });
+          }
+
+          // 2. Decrypt the CLD inline (no SW required).
+          function decryptInline() {
+            if (!files || !files.hasEncryptedCld) return fromLangDataJson();
+            return idbGet(db, CLD_KEY).then(function (raw) {
+              if (!raw) return fromLangDataJson();
+              var maybePromise = extractLangFromCld(raw);
+              if (maybePromise && typeof maybePromise.then === "function") {
+                return maybePromise.then(function (json) {
+                  if (json) {
+                    // Decoded into memory for browser-shim to serve the DRM
+                    // synchronously; NOT written back to IDB. The encrypted
+                    // CLD stays the only at-rest copy, decoded on the fly each
+                    // boot (keeps the plain script out of IDB).
+                    window.__langData = json;
+                    return;
+                  }
+                  return fromLangDataJson();
+                });
+              }
+              if (maybePromise) {
+                window.__langData = maybePromise;
+                return;
+              }
+              return fromLangDataJson();
+            });
+          }
+
+          return decryptInline();
+        }
+
+        // Preload /mods.json into window.__modsDataJson so lang-shim.js's
+        // synchronous XHR has a working fallback when the SW couldn't (or
+        // didn't yet) intercept the request: first visit before SW claim,
+        // ensureSW's 3 s timeout firing, or an empty SHELL_CACHE / IDB
+        // fallback after a SW version bump while offline.
+        //
+        // Resolution order:
+        //   1. fetch(/mods.json) goes through the SW (which has its own
+        //      network-first + SHELL_CACHE + IDB fallback chain); also handles
+        //      the no-controller case where the fetch goes straight to network.
+        //   2. Direct IDB read of "__shell:mods.json__" (the same key the SW
+        //      writes to on every successful fetch). Survives an SW that never
+        //      controlled the page (e.g. user offline since first install).
+        //
+        // On a successful resolve we also mirror the text back into IDB so
+        // a future offline boot finds it even if the SW never intercepts.
+        // mod-related logic in lang-shim.js (mod menu, loadActivePlugins,
+        // install/uninstall) all key off _modsData, so making this resilient
+        // is what keeps plugins and the Mods scene working offline.
+        var MODS_JSON_IDB_KEY = "__shell:mods.json__";
+
+        function preloadModsData(db) {
+          function stashAndPersist(text) {
+            if (!text || typeof text !== "string") return false;
+            try {
+              var parsed = JSON.parse(text);
+              if (!parsed || typeof parsed !== "object") return false;
+              window.__modsDataJson = text;
+              if (db) idbPut(db, MODS_JSON_IDB_KEY, text);
+              return true;
+            } catch (e) {
+              return false;
+            }
+          }
+
+          return fetch("/mods.json", { cache: "no-store" })
+            .then(function (res) {
+              return res && res.ok ? res.text() : null;
+            })
+            .catch(function () {
+              return null;
+            })
+            .then(function (text) {
+              if (stashAndPersist(text)) return;
+              if (!db) return;
+              return idbGet(db, MODS_JSON_IDB_KEY).then(function (cached) {
+                if (cached && typeof cached === "string")
+                  stashAndPersist(cached);
+              });
+            });
+        }
+
+        //
+        // A returning user may have a translation installed that this app
+        // update improved the parser for (LANG_PARSE_VERSION bump in
+        // lang-format.js), or whose content the translations server has
+        // revved. lang-shim.js's background sync only applies on the NEXT
+        // launch, so the reconnecting launch would still show stale text
+        // (e.g. untranslated choices). We detect it here, BEFORE
+        // preloadLangData reads the merged CLD, show the loading image, apply
+        // the fix to IDB, and reload so the engine boots once with correct
+        // text. Scope: the ACTIVE translation only (bounded, usually a fast
+        // local re-parse); every other language stays on lang-shim's lazy
+        // background sync.
+
+        function showUpdateSplash(msg) {
+          try {
+            splash.classList.remove("hidden");
+            splash.innerHTML =
+              '<div style="display:flex;flex-direction:column;' +
+              'align-items:center;gap:18px;padding:24px;box-sizing:border-box">' +
+              '<img src="/img/loading.png" alt="Loading" ' +
+              'style="max-width:70vw;max-height:45vh;object-fit:contain" />' +
+              "<div>" +
+              (msg || "Updating translation...") +
+              "</div></div>";
+          } catch (e) {}
+        }
+
+        // Rebuild the cached CLD (__mod_lang_data__) from the langFile already
+        // in IDB, using the same format handling as lang-shim.js's
+        // extractModLangData: .csv/.txt go through the shared parser, .loc/.json
+        // (and "LANGDATA"-prefixed CLDs) are JSON with any leading padding
+        // stripped. No network. Returns true on success.
+        function extractTranslationCache(db, id, entry) {
+          var langFile = entry.langFile;
+          return idbGet(db, "mod:" + id + ":" + langFile).then(function (raw) {
+            if (raw == null) return false;
+            var text =
+              typeof raw === "string" ? raw : new TextDecoder().decode(raw);
+            var LF = window.LangFormat;
+            var parsed, json;
+            if (/\.csv$/i.test(langFile)) {
+              parsed = LF.parseDialogueCsv(text);
+              json = JSON.stringify(parsed);
+            } else if (/\.txt$/i.test(langFile)) {
+              parsed = LF.parseDialogueTxt(text);
+              json = JSON.stringify(parsed);
+            } else {
+              json = text.trim();
+              var s = json.indexOf("{");
+              if (s > 0) json = json.substring(s);
+              try {
+                parsed = JSON.parse(json);
+              } catch (e) {
+                return false;
+              }
+            }
+            if (
+              !parsed ||
+              (!parsed.linesLUT && !parsed.labelLUT && !parsed.sysMenus)
+            )
+              return false;
+            return idbPut(db, "__mod_lang_data__:" + id, json).then(
+              function () {
+                return true;
+              },
+            );
+          });
+        }
+
+        // Re-fetch every file of a (remote) translation into IDB. Returns true
+        // only when every file stored OK, so a partial download never
+        // half-replaces a working translation.
+        function downloadTranslation(db, id, entry) {
+          var base = String(entry.path || "").replace(/\/$/, "") + "/";
+          var files = entry.files || [];
+          if (!files.length) return Promise.resolve(false);
+          var ok = true;
+          var chain = Promise.resolve();
+          files.forEach(function (rel) {
+            chain = chain.then(function () {
+              if (!ok) return;
+              return fetch(base + rel)
+                .then(function (res) {
+                  if (!res.ok) throw new Error(String(res.status));
+                  return res.arrayBuffer();
+                })
+                .then(function (buf) {
+                  return idbPut(db, "mod:" + id + ":" + rel, buf);
+                })
+                .catch(function () {
+                  ok = false;
+                });
+            });
+          });
+          return chain.then(function () {
+            return ok;
+          });
+        }
+
+        function ensureActiveTranslationFresh(ctx) {
+          var db = ctx && ctx.db;
+          if (!db || !window.indexedDB) return Promise.resolve();
+          var activeLang = null;
+          try {
+            activeLang = localStorage.getItem("_activeLang") || null;
+          } catch (e) {}
+          if (!activeLang) return Promise.resolve();
+
+          var modsData = null;
+          try {
+            modsData = JSON.parse(window.__modsDataJson || "null");
+          } catch (e) {}
+          var entry = modsData && modsData[activeLang];
+          if (!entry || entry.type !== "translation" || !entry.langFile)
+            return Promise.resolve();
+
+          return Promise.all([
+            idbGet(db, "__mod_meta__:" + activeLang),
+            idbGetAllKeys(db, "mod:" + activeLang + ":"),
+          ]).then(function (res) {
+            var rawMeta = res[0];
+            var modKeys = res[1] || [];
+            {
+              if (rawMeta == null) return; // not installed -> nothing to refresh
+              var meta = {};
+              try {
+                meta =
+                  typeof rawMeta === "string" ? JSON.parse(rawMeta) : rawMeta;
+              } catch (e) {
+                meta = {};
+              }
+
+              var curVer = entry.version || "";
+              var versionOk = !curVer || meta.version === curVer;
+              var canReparse = /\.(csv|txt)$/i.test(entry.langFile);
+
+              // A translation installed from an older/partial manifest can be
+              // missing files even when its version matches (the same broken
+              // state overhauls hit). Detect it so the re-download path below
+              // also fires for a mere gap, not only a version bump.
+              var have = {};
+              var pfx = "mod:" + activeLang + ":";
+              for (var mk = 0; mk < modKeys.length; mk++)
+                have[String(modKeys[mk]).substring(pfx.length)] = 1;
+              var filesMissing = false;
+              var tfiles = entry.files || [];
+              for (var tf = 0; tf < tfiles.length; tf++) {
+                if (!have[tfiles[tf]]) {
+                  filesMissing = true;
+                  break;
+                }
+              }
+
+              // Fast exit: version current, nothing missing, AND not a locally
+              // re-parsable format (e.g. a .loc translation) -> nothing to do.
+              if (versionOk && !filesMissing && !canReparse) return;
+
+              // Judging parse-staleness needs LANG_PARSE_VERSION, and applying
+              // either fix needs the parser itself; both live in lang-format.js.
+              // It's in GAME_SCRIPTS but loads later, so pull it in now. Only
+              // reached for an installed active translation, so users without a
+              // translation never load it on the boot path.
+              var ensureLF = window.LangFormat
+                ? Promise.resolve()
+                : loadScripts(["js/libs/lang-format.js"], 0).catch(
+                    function () {},
+                  );
+
+              return ensureLF.then(function () {
+                if (!window.LangFormat) return; // couldn't load -> leave to bg sync
+                var parseVer = window.LangFormat.LANG_PARSE_VERSION;
+                var parseStale =
+                  canReparse && (meta.langParseVersion || 0) < parseVer;
+                if (versionOk && !filesMissing && !parseStale) return; // fresh
+
+                // Loop guard: only the reload path (below) sets this; it stops a
+                // reload-requiring update that never "sticks" from looping.
+                var GUARD = "__langUpdateTried:" + activeLang;
+                try {
+                  if (sessionStorage.getItem(GUARD) === "1") return;
+                } catch (e) {}
+
+                // Missing files can only be refilled from the network; a plain
+                // parse-refresh cannot, so a gap forces a download too.
+                var needsDownload = !versionOk || filesMissing;
+                // A re-download needs the network; a local re-parse does not.
+                if (needsDownload && navigator.onLine === false) return;
+
+                showUpdateSplash();
+
+                var work;
+                if (needsDownload) {
+                  work = downloadTranslation(db, activeLang, entry).then(
+                    function (downloaded) {
+                      if (!downloaded) return false;
+                      var newMeta = {
+                        version: entry.version || "",
+                        date: new Date().toISOString().substring(0, 10),
+                        files: (entry.files || []).length,
+                        langParseVersion: parseVer,
+                      };
+                      return idbPut(
+                        db,
+                        "__mod_meta__:" + activeLang,
+                        JSON.stringify(newMeta),
+                      ).then(function () {
+                        return extractTranslationCache(db, activeLang, entry);
+                      });
+                    },
+                  );
+                } else {
+                  work = extractTranslationCache(db, activeLang, entry).then(
+                    function (reparsed) {
+                      if (!reparsed) return false;
+                      meta.langParseVersion = parseVer;
+                      return idbPut(
+                        db,
+                        "__mod_meta__:" + activeLang,
+                        JSON.stringify(meta),
+                      ).then(function () {
+                        return true;
+                      });
+                    },
+                  );
+                }
+                return work.then(function (result) {
+                  // result === false   -> update failed; continue with the stale
+                  //   data (lang-shim's background sync retries it next launch).
+                  // result truthy       -> applied to IDB in-place. preloadLangData
+                  //   runs right after this and reads the corrected
+                  //   /lang-data.json, so NO restart is needed.
+                  // result === "reload" -> applied, but the change can only take
+                  //   effect on a fresh boot. No action needs this today; it is
+                  //   the escape hatch for a future preload step that mutates
+                  //   something already consumed earlier in this boot (e.g. the
+                  //   SW's active-state read). Such an action returns "reload".
+                  if (result === "reload") {
+                    try {
+                      sessionStorage.setItem(GUARD, "1");
+                    } catch (e) {}
+                    location.reload();
+                    return new Promise(function () {}); // halt this boot
+                  }
+                });
+              });
+            }
+          });
+        }
+
+        // Repair active mods whose stored file set is incomplete. A mod
+        // installed from an older manifest -- before missing files were added
+        // back to the source -- is missing those files in IDB, leaving it
+        // broken with no in-menu fix short of uninstall/reinstall. On boot, for
+        // every ACTIVE installed overhaul and plugin, diff the manifest file
+        // list against the "mod:{id}:" keys in IDB and, if any are missing,
+        // show the loading splash and fetch just those files (per-file, same
+        // URL layout as installMod) before the menu appears. Best-effort:
+        // offline, or a fetch that fails, leaves the mod as-is and boot
+        // continues; the next online launch retries. Only once every missing
+        // file is stored is the mod's meta advanced to the manifest version, so
+        // a partial repair never marks the mod current. Active translations are
+        // handled by ensureActiveTranslationFresh (it re-extracts the CLD
+        // cache too); this covers overhauls + plugins, which have no path.
+        function ensureActiveModsComplete(ctx) {
+          var db = ctx && ctx.db;
+          if (!db || !window.indexedDB) return Promise.resolve();
+          if (navigator.onLine === false) return Promise.resolve();
+
+          var modsData = null;
+          try {
+            modsData = JSON.parse(window.__modsDataJson || "null");
+          } catch (e) {}
+          if (!modsData) return Promise.resolve();
+
+          // Everything active this session: the overhaul in _activeMod plus
+          // every plugin in _activePlugins, deduplicated.
+          var ids = [];
+          function pushId(id) {
+            if (id && ids.indexOf(id) < 0) ids.push(id);
+          }
+          try {
+            pushId(localStorage.getItem("_activeMod") || null);
+          } catch (e) {}
+          try {
+            var rawP = localStorage.getItem("_activePlugins");
+            if (rawP) {
+              var arr = JSON.parse(rawP);
+              if (Array.isArray(arr)) arr.forEach(pushId);
+            }
+          } catch (e) {}
+          if (!ids.length) return Promise.resolve();
+
+          // Build the repair list: {id, entry, missing[]} for each active,
+          // installed mod with manifest files absent from IDB.
+          var repairs = [];
+          var scan = Promise.resolve();
+          ids.forEach(function (id) {
+            scan = scan.then(function () {
+              var entry = modsData[id];
+              var files = entry && entry.files;
+              if (!entry || !files || !files.length) return;
+              // A remote translation has its own repair path; skip it here.
+              if (entry.type === "translation") return;
+              return idbGet(db, "__mod_meta__:" + id).then(function (rawMeta) {
+                if (rawMeta == null) return; // not installed -> skip
+                return idbGetAllKeys(db, "mod:" + id + ":").then(
+                  function (keys) {
+                    var have = {};
+                    var plen = ("mod:" + id + ":").length;
+                    for (var k = 0; k < keys.length; k++)
+                      have[String(keys[k]).substring(plen)] = 1;
+                    var missing = [];
+                    for (var f = 0; f < files.length; f++)
+                      if (!have[files[f]]) missing.push(files[f]);
+                    if (missing.length)
+                      repairs.push({ id: id, entry: entry, missing: missing });
+                  },
+                );
+              });
+            });
+          });
+
+          return scan.then(function () {
+            if (!repairs.length) return;
+
+            showUpdateSplash("Updating mods...");
+
+            // Repair each mod in turn. wwwBase mirrors installMod: a remote
+            // (absolute-URL) path serves files directly; a local path keeps the
+            // www/ layout under /{path}/www/.
+            var chain = Promise.resolve();
+            repairs.forEach(function (r) {
+              chain = chain.then(function () {
+                var path = String(r.entry.path || "").replace(/\/$/, "");
+                var isRemote = /^https?:\/\//i.test(path);
+                var base = isRemote ? path + "/" : "/" + path + "/www/";
+                var ok = true;
+                var sub = Promise.resolve();
+                r.missing.forEach(function (rel) {
+                  sub = sub.then(function () {
+                    if (!ok) return;
+                    return fetch(base + rel)
+                      .then(function (res) {
+                        if (!res.ok) throw new Error(String(res.status));
+                        return res.arrayBuffer();
+                      })
+                      .then(function (buf) {
+                        return idbPut(db, "mod:" + r.id + ":" + rel, buf);
+                      })
+                      .catch(function () {
+                        ok = false;
+                      });
+                  });
+                });
+                return sub.then(function () {
+                  if (!ok) return; // partial: keep stale meta, retry next time
+                  // Every missing file is now stored. Advance the mod's meta to
+                  // the current manifest version and file count so the repair
+                  // sticks, preserving other meta fields (e.g. langParseVer).
+                  return idbGet(db, "__mod_meta__:" + r.id).then(
+                    function (rawMeta) {
+                      var meta = {};
+                      try {
+                        meta =
+                          typeof rawMeta === "string"
+                            ? JSON.parse(rawMeta)
+                            : rawMeta || {};
+                      } catch (e) {
+                        meta = {};
+                      }
+                      meta.version = r.entry.version || meta.version || "";
+                      meta.files = (r.entry.files || []).length;
+                      meta.date = new Date().toISOString().substring(0, 10);
+                      return idbPut(
+                        db,
+                        "__mod_meta__:" + r.id,
+                        JSON.stringify(meta),
+                      );
+                    },
+                  );
+                });
+              });
+            });
+            return chain;
+          });
+        }
+
+        // Step 2c: load favicon from IDB (icon/icon.png from the user's game files)
+        function loadFavicon(db) {
+          idbGet(db, "icon/icon.png").then(function (data) {
+            if (!data) return;
+            try {
+              var blob =
+                data instanceof Blob
+                  ? data
+                  : new Blob([data], { type: "image/png" });
+              var url = URL.createObjectURL(blob);
+              var fav = document.getElementById("favicon");
+              var apple = document.getElementById("apple-icon");
+              if (fav) {
+                fav.href = url;
+                fav.type = "image/png";
+              }
+              if (apple) apple.href = url;
+            } catch (e) {}
+          });
+        }
+
+        // Step 3: dynamically load game scripts in order.
+        // A failed load is reported (not silently swallowed): the engine
+        // can't recover from a missing rpg_core.js or browser-shim.js.
+        function loadScripts(urls, idx) {
+          if (idx >= urls.length) return Promise.resolve();
+          return new Promise(function (resolve, reject) {
+            var s = document.createElement("script");
+            s.type = "text/javascript";
+            s.src = urls[idx];
+            s.onload = function () {
+              loadScripts(urls, idx + 1)
+                .then(resolve)
+                .catch(reject);
+            };
+            s.onerror = function () {
+              reject(new Error("Failed to load script: " + urls[idx]));
+            };
+            document.body.appendChild(s);
+          });
+        }
+
+        // Game script order mirrors the original static <script> tags
+        var GAME_SCRIPTS = [
+          "js/libs/pixi.js",
+          "js/libs/pixi-tilemap.js",
+          "js/libs/pixi-picture.js",
+          "js/libs/fpsmeter.js",
+          "js/libs/lz-string.js",
+          "js/libs/iphone-inline-video.browser.js",
+          "js/rpg_core.js",
+          "js/libs/pako_inflate.min.js",
+          "js/libs/browser-shim.js",
+          "js/rpg_managers.js",
+          "js/rpg_objects.js",
+          "js/rpg_scenes.js",
+          "js/rpg_sprites.js",
+          "js/rpg_windows.js",
+          "js/plugins.js",
+          "js/libs/lang-format.js",
+          "js/libs/lang-shim.js",
+          "js/libs/achievements-shim.js",
+          "js/main.js",
+        ];
+
+        // Boot sequence
+        setPhase("init", "Initializing...");
+
+        // Defensively re-assert persistent storage on every boot. The loader
+        // requests it at import time, but installs imported before that change
+        // (or where the first request was denied and engagement has since
+        // risen) get upgraded here so the game files aren't evicted under
+        // storage pressure. Fire-and-forget: never gates boot.
+        try {
+          if (navigator.storage && navigator.storage.persist) {
+            navigator.storage
+              .persisted()
+              .then(function (already) {
+                if (!already) return navigator.storage.persist();
+                return true;
+              })
+              .catch(function () {});
+          }
+        } catch (e) {}
+
+        ensureSW()
+          .then(function () {
+            setPhase("check-files", "Checking game files...");
+            // Open IDB. If this throws we likely have a private/locked
+            // storage situation: still try server.js mode.
+            return idbOpen().then(
+              function (db) {
+                return { db: db };
+              },
+              function () {
+                return { db: null };
+              },
+            );
+          })
+          .then(function (ctx) {
+            var db = ctx.db;
+            if (!db) {
+              return checkServer().then(function (ok) {
+                if (!ok) {
+                  // No IDB and no server, send to loader.
+                  location.replace("/loader.html");
+                  return null;
+                }
+                return { db: null, files: null, server: true };
+              });
+            }
+            return migrateLegacyDecoded(db).then(function (mig) {
+              // Legacy decoded old build: already wiped + redirected to loader.
+              if (mig === "reimport") return null;
+              return checkGameFiles(db).then(function (files) {
+                if (!files.hasCore) {
+                // Maybe server.js mode (no IDB import).
+                return checkServer().then(function (ok) {
+                  if (ok) return { db: db, files: null, server: true };
+                  // Nothing to play: send back to import flow.
+                  location.replace("/loader.html");
+                  return null;
+                });
+              }
+              if (!files.hasAnyLang) {
+                // Critical files imported but the language file is missing.
+                // The DRM cannot start without it. Surface a clear error
+                // so the user can clear and re-import.
+                showError(
+                  "Required game data missing",
+                  "The language data file (data/9c7050ae76645487) wasn't " +
+                    "found in the imported game. The game can't start " +
+                    "without it. Re-import your full game folder.",
+                  new Error(
+                    "Missing CLD: neither __lang_data__ nor " +
+                      CLD_KEY +
+                      " is present in IndexedDB.",
+                  ),
+                );
+                return null;
+              }
+              // Manifest healthcheck: if files are missing, send the user
+              // to /loader.html (manage UI shows the report + a Play
+              // button so they can still launch if they want).
+              // Skip when the user has already acknowledged the missing
+              // files via the loader's Play button: otherwise we'd loop
+              // them right back here on every navigation.
+              var acknowledged = false;
+              try {
+                acknowledged =
+                  localStorage.getItem("_healthcheckAcknowledged") === "1";
+              } catch (e) {}
+              if (acknowledged) return { db: db, files: files, server: false };
+              return healthcheckOk(db).then(function (ok) {
+                if (!ok) {
+                  location.replace("/loader.html");
+                  return null;
+                }
+                return { db: db, files: files, server: false };
+              });
+              });
+            });
+          })
+          .then(function (ctx) {
+            if (!ctx) return; // already handled (redirect or error)
+
+            // Game files are available and SW is active, load the game
+            setPhase("preload", "Preparing language data...");
+
+            // Preload language data and favicon (favicon is non-blocking).
+            if (ctx.db) loadFavicon(ctx.db);
+
+            // Order matters: load mods.json first (the freshness gates read
+            // it), then repair any incomplete active mods and refresh the
+            // active translation BEFORE the language data is read, then preload
+            // the now-current language data.
+            return preloadModsData(ctx.db)
+              .then(function () {
+                return ensureActiveModsComplete(ctx);
+              })
+              .then(function () {
+                return ensureActiveTranslationFresh(ctx);
+              })
+              .then(function () {
+                return preloadLangData(ctx.db, ctx.files);
+              })
+              .then(function () {
+                // If we still don't have language data and there's no active
+                // mod, fail loudly: the DRM will produce cryptic errors
+                // ("Cannot create property imageLUT on string ''", etc.) if
+                // we let it run without it.
+                var activeMod = null;
+                try {
+                  activeMod = localStorage.getItem("_activeMod") || null;
+                } catch (e) {}
+                if (!activeMod && !window.__langData) {
+                  showError(
+                    "Language data unavailable",
+                    "The game's language data couldn't be decoded. This " +
+                      "usually means the import was incomplete. Clearing " +
+                      "and re-importing the game folder fixes it.",
+                    new Error("__langData empty after preload"),
+                  );
+                  return null;
+                }
+
+                setPhase("load-scripts", "Starting game...");
+
+                // Load the font CSS first (it may also be in IDB)
+                var link = document.createElement("link");
+                link.rel = "stylesheet";
+                link.type = "text/css";
+                link.href = "fonts/gamefont.css";
+                document.head.appendChild(link);
+
+                // Intercept the onload handler that main.js will set
+                // window.onload already fired so a plain assignment would
+                // never trigger. We capture it and call it ourselves once
+                // all plugin scripts have loaded.
+                var _bootOnload = null;
+                Object.defineProperty(window, "onload", {
+                  set: function (fn) {
+                    _bootOnload = fn;
+                  },
+                  get: function () {
+                    return _bootOnload;
+                  },
+                  configurable: true,
+                });
+
+                return loadScripts(GAME_SCRIPTS, 0).then(function () {
+                  setPhase("plugins", "Loading game plugins...");
+                  // Hide the splash
+                  splash.classList.add("hidden");
+                  setTimeout(function () {
+                    splash.remove();
+                  }, 400);
+
+                  // main.js called PluginManager.setup($plugins). The
+                  // hardened loader in lang-shim.js fetches every plugin
+                  // source in parallel and exposes window.__pluginsLoaded
+                  // as a Promise that resolves once every plugin has been
+                  // injected as an inline <script>. Wait on it so we don't
+                  // boot before plugins (incl. the DRM payload) execute.
+                  // Falls back to a resolved Promise when the hardened
+                  // loader is absent (no behavioural change in that case).
+                  return Promise.resolve(window.__pluginsLoaded).then(
+                    function () {
+                      bootAfterPlugins();
+                    },
+                  );
+
+                  function bootAfterPlugins() {
+                    // Finish boot: apply browser overrides then start game.
+                    function finishBoot() {
+                      setPhase("apply-overrides", "Applying overrides...");
+                      // Apply browser overrides for non-zlib DRM types
+                      // (deobfuscated.js, GameCode.js, etc.). For zlib DRM,
+                      // the overrides were already applied via inflateSync
+                      // but __applyBrowserOverrides is idempotent.
+                      if (window.__applyBrowserOverrides)
+                        window.__applyBrowserOverrides();
+
+                      // Hook lang-shim into Scene_Boot AFTER DRM payload
+                      // has loaded (it overwrites Scene_Boot.prototype.start)
+                      if (window.__langShimHookBoot)
+                        window.__langShimHookBoot();
+                      if (window.__achvShimHookBoot)
+                        window.__achvShimHookBoot();
+                      delete window.onload;
+                      bootDone = true;
+
+                      function startScene() {
+                        if (_bootOnload) {
+                          _bootOnload();
+                        } else if (typeof SceneManager !== "undefined") {
+                          SceneManager.run(Scene_Boot);
+                        }
+                      }
+
+                      // The DRM payload wraps SceneManager.run to call
+                      // DataManager.init() synchronously, which enumerates
+                      // auto*.rpgsave keys from localStorage to rebuild the
+                      // globalInfo autoSaves dict. For overhaul mods the
+                      // keys live under "<modId>:RPG Auto<ts>"; if they
+                      // haven't been restored from IDB yet (LS eviction),
+                      // the cleanup loop sees an empty directory and wipes
+                      // the dict, making autosaves vanish from the load
+                      // menu even though they persist in IDB. Block boot
+                      // until lang-shim signals restoration is complete.
+                      if (window.__langShimSavesReady) {
+                        Promise.resolve(window.__langShimSavesReady).then(
+                          startScene,
+                        );
+                      } else {
+                        startScene();
+                      }
+                    }
+
+                    // Some mods load game code via async <script> tags
+                    // (e.g. deobfuscated.js injected by _()), which may not
+                    // have executed yet. Detect and wait for them before
+                    // applying overrides and booting the game.
+                    var pendingGameCode = null;
+                    var scripts = document.getElementsByTagName("script");
+                    for (var si = 0; si < scripts.length; si++) {
+                      var src = scripts[si].getAttribute("src") || "";
+                      if (
+                        src.indexOf("deobfuscated") >= 0 ||
+                        src.indexOf("GameCode") >= 0
+                      ) {
+                        // Check if game globals exist (script already ran)
+                        if (
+                          typeof Lang === "undefined" &&
+                          typeof App === "undefined"
+                        ) {
+                          pendingGameCode = scripts[si];
+                        }
+                        break;
+                      }
+                    }
+
+                    if (pendingGameCode) {
+                      var _booted = false;
+                      function onceDone() {
+                        if (_booted) return;
+                        _booted = true;
+                        finishBoot();
+                      }
+                      pendingGameCode.addEventListener("load", onceDone);
+                      pendingGameCode.addEventListener("error", onceDone);
+                      // Safety timeout: don't block forever
+                      setTimeout(onceDone, 5000);
+                    } else {
+                      finishBoot();
+                    }
+                  }
+                });
+              }); // end preloadLangData().then
+          })
+          .catch(function (e) {
+            console.error("[boot] Fatal:", e);
+            showError(
+              "Game failed to start",
+              "The game couldn't start. Clearing the imported data and " +
+                "re-importing the game folder usually fixes it.",
+              e,
+            );
+          });
+      })();
+    </script>
+  </body>
+</html>

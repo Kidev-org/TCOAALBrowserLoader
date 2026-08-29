@@ -1,0 +1,164 @@
+name: Deploy Web
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.0
+      - name: Setup site
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/id_key
+          chmod 600 ~/.ssh/id_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_key -o StrictHostKeyChecking=no" \
+            git clone --recursive git@github.com:cal-mods/basics.git _mods_src
+          for mod_dir in _mods_src/*/; do
+            mod_name=$(basename "$mod_dir")
+            [ -d "$mod_dir" ] || continue
+            if [ -d "mods/$mod_name" ] && [[ "$mod_name" == _* ]]; then
+              continue
+            fi
+            rm -rf "mods/$mod_name"
+            cp -r "$mod_dir" "mods/$mod_name"
+          done
+          rm -rf _mods_src ~/.ssh/id_key
+          mkdir _site
+          cp -r app/* _site/
+          cp -r mods _site/mods
+          cp mods.json _site/mods.json
+          # /notice.html fetches and renders this; it is the single source of
+          # truth for the project's statement of purpose (see server.js).
+          cp NOTICE.md _site/NOTICE.md
+          # Native installer stubs. deploy-stubs.yml publishes each built set
+          # as the assets of a `stub/v*` GitHub Release (a release, not a
+          # branch: github.com rejects any pushed file over 100 MB and the
+          # Linux AppImage is past that). Pages here is deployed from an
+          # artifact (upload-pages-artifact + deploy-pages), which replaces the
+          # ENTIRE published site on every run: anything not in _site is gone.
+          # Pulling the set back in is what keeps /stub/* (and the stubs.json
+          # app/create.html fetches) reachable across deploys.
+          #
+          # This version's own stubs when Deploy Stubs ran for it, otherwise
+          # the most recently published set, since a web-only redeploy must not
+          # drop /stub/* just because no stubs were built for its version.
+          mkdir -p _site/stub
+          stub_tag="stub/v${VERSION}"
+          if ! gh release view "$stub_tag" >/dev/null 2>&1; then
+            stub_tag=$(gh release list --limit 100 --json tagName,createdAt \
+              --jq '[.[] | select(.tagName | startswith("stub/v"))]
+                    | sort_by(.createdAt) | last | .tagName // empty')
+          fi
+          if [ -n "$stub_tag" ] &&
+             gh release download "$stub_tag" --dir _site/stub --clobber &&
+             [ -f _site/stub/stubs.json ]; then
+            # create.html refuses to stamp a stub whose sha256 does not match
+            # its stubs.json entry, so a truncated asset download here would
+            # ship a site whose Linux/Windows/macOS buttons all fail. Catch it
+            # in CI instead.
+            node -e '
+              const fs = require("fs"), crypto = require("crypto");
+              const dir = "_site/stub";
+              const man = JSON.parse(fs.readFileSync(dir + "/stubs.json", "utf8"));
+              let bad = 0;
+              for (const e of Object.values(man)) {
+                let b = null;
+                try { b = fs.readFileSync(dir + "/" + e.file); } catch (_) {}
+                if (!b) { console.log("::error::" + e.file + " is missing"); bad++; continue; }
+                const h = crypto.createHash("sha256").update(b).digest("hex");
+                if (h !== e.sha256 || b.length !== e.size) {
+                  console.log("::error::" + e.file + " does not match stubs.json");
+                  bad++;
+                }
+              }
+              if (bad) process.exit(1);
+            '
+          else
+            rm -rf _site/stub
+          fi
+          mkdir -p _site/img
+          curl -fsSL -o _site/img/achievement-unlocked.jpg \
+            https://cdn.fastly.steamstatic.com/steamcommunity/public/images/apps/2378900/55f956539371a92bd5d24a0a72d84cf983eb4b82.jpg
+          curl -fsSL -o _site/img/achievement-locked.jpg \
+            https://cdn.fastly.steamstatic.com/steamcommunity/public/images/apps/2378900/8909a9950e3deb1c38afce9a4b427d5f7dfb461b.jpg
+          curl -fsSL -o _site/img/tcoaal-steam-header.jpg \
+            https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/2378900/0badd5423ec8cb36d543b7b156121ac2d38ef330/header.jpg
+
+      - name: Setup Node
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 20
+
+      - name: Minify and stamp
+        run: |
+          for f in _site/*.html; do
+            npx --yes html-minifier-terser@7 \
+              --collapse-whitespace --remove-comments \
+              --minify-css true \
+              --minify-js '{"compress":true,"mangle":false}' \
+              -o "$f.tmp" "$f"
+            mv "$f.tmp" "$f"
+          done
+          while IFS= read -r f; do
+            npx --yes terser@5 "$f" --compress --comments false -o "$f.tmp"
+            mv "$f.tmp" "$f"
+          done < <(find _site/js _site/sw.js -name '*.js' ! -name '*.min.js')
+          BUILD_TS=$(TZ=UTC date '+%d/%m/%Y %H:%M:%S')
+          printf '\n<!-- %s -->\n' "$BUILD_TS" >> _site/index.html
+          printf '\n<!-- %s -->\n' "$BUILD_TS" >> _site/loader.html
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+          retention-days: 1
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Delete artifact
+        uses: geekyeggo/delete-artifact@v6
+        with:
+          name: github-pages
+
+      - name: Tag the build commit
+        env:
+          TAG: web/v${{ inputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
