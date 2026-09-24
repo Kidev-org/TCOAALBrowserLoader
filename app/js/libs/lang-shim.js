@@ -741,9 +741,9 @@
     return {
       key: ADD_MOD_FILE_KEY,
       action: "addFile",
-      name: "Add a mod file",
+      name: "Add a custom mod",
       author: "",
-      description: "Install a .tcoaalmod file you downloaded (or drop one here)",
+      description: "Install a custom mod using a .tcoaalmod file",
       type: "",
       path: "",
     };
@@ -7449,7 +7449,7 @@
     }
 
     // The blue left-to-right fill a row draws while its install runs (see
-    // drawModRow). Shared with the "Add a mod file" row, whose import reports
+    // drawModRow). Shared with the "Add a custom mod" row, whose import reports
     // progress the same way.
     function drawRowProgress(win, mod, rect) {
       var dlSt = _modStatus[mod.key];
@@ -7736,7 +7736,7 @@
       win.resetTextColor();
     }
 
-    // The "Add a mod file" row: a plus in the icon column, the label, and
+    // The "Add a custom mod" row: a plus in the icon column, the label, and
     // either its hint or the running import's progress on the line below.
     function drawAddFileRow(win, mod, rect) {
       drawRowProgress(win, mod, rect);

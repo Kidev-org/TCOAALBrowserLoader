@@ -2761,6 +2761,7 @@
       <div id="actions">
         <button id="install">Install</button>
         <button id="launch">Play</button>
+        <button id="update" hidden>Update</button>
         <button id="uninstall">Uninstall</button>
         <button id="choose">Choose the game folder</button>
       </div>
@@ -2777,6 +2778,10 @@
 "use strict";
 
 var $ = function (id) { return document.getElementById(id); };
+
+/* #update belongs to the loader: it shows the button, labelled with the new
+ * version, only while an update is available, and runs the update when it is
+ * clicked. Move it or style it like any other button. */
 
 async function refresh() {
   var game = await FindGame();
@@ -2941,7 +2946,17 @@ button {
 }
 button:hover { border-color: var(--accent); }
 button[hidden] { display: none; }
-progress { width: 100%; margin-top: 16px; }
+/* Across the window, not the card: a native bar shows no track on a
+   dark page, so the window's own edges are what show how far along it
+   is. */
+progress {
+  position: fixed;
+  left: 24px;
+  bottom: 22px;
+  width: calc(100% - 48px);
+  margin: 0;
+  accent-color: var(--accent);
+}
 `,
         poster: `/* Edit freely. The loader serves this file from inside the mod package,
    so anything you link to has to be in the theme folder with it. */
@@ -3017,7 +3032,17 @@ button {
 }
 button:hover { border-color: var(--accent); color: var(--accent); }
 button[hidden] { display: none; }
-progress { width: 100%; margin-top: 18px; }
+/* Across the window, not the card: a native bar shows no track on a
+   dark page, so the window's own edges are what show how far along it
+   is. */
+progress {
+  position: fixed;
+  left: 24px;
+  bottom: 22px;
+  width: calc(100% - 48px);
+  margin: 0;
+  accent-color: var(--accent);
+}
 `,
         custom: `/* Nothing is styled yet. The markup in index.html is all
    there, so start here and the preview follows every keystroke. */
@@ -3076,7 +3101,17 @@ button::before { content: "["; color: var(--muted); }
 button::after { content: "]"; color: var(--muted); }
 button:hover { border-color: var(--accent); background: #0b1a10; }
 button[hidden] { display: none; }
-progress { width: 100%; margin-top: 16px; accent-color: var(--accent); }
+/* Across the window, not the card: a native bar shows no track on a
+   dark page, so the window's own edges are what show how far along it
+   is. */
+progress {
+  position: fixed;
+  left: 24px;
+  bottom: 22px;
+  width: calc(100% - 48px);
+  margin: 0;
+  accent-color: var(--accent);
+}
 `,
         dossier: `/* Edit freely. The loader serves this file from inside the mod package,
    so anything you link to has to be in the theme folder with it. */
@@ -3171,10 +3206,15 @@ button[hidden] { display: none; }
   border-color: var(--accent);
   color: var(--sheet);
 }
+/* Across the window, not the card: a native bar shows no track on a
+   dark page, so the window's own edges are what show how far along it
+   is. */
 progress {
-  grid-area: prog;
-  width: 100%;
-  margin-top: 18px;
+  position: fixed;
+  left: 24px;
+  bottom: 22px;
+  width: calc(100% - 48px);
+  margin: 0;
   accent-color: var(--accent);
 }
 `,
@@ -3272,10 +3312,15 @@ button:hover { border-color: var(--fg); }
 button[hidden] { display: none; }
 #install, #launch { background: var(--accent); border-color: var(--accent); color: #17130a; }
 #install:hover, #launch:hover { background: #ffc74d; border-color: #ffc74d; }
+/* Across the window, not the card: a native bar shows no track on a
+   dark page, so the window's own edges are what show how far along it
+   is. */
 progress {
-  grid-area: prog;
-  width: min(100%, 42ch);
-  margin-top: 20px;
+  position: fixed;
+  left: 24px;
+  bottom: 22px;
+  width: calc(100% - 48px);
+  margin: 0;
   accent-color: var(--accent);
 }
 `,
@@ -3362,7 +3407,17 @@ button {
 }
 button:hover { border-color: var(--accent); color: var(--accent); }
 button[hidden] { display: none; }
-progress { width: 100%; margin-top: 18px; accent-color: var(--accent); }
+/* Across the window, not the card: a native bar shows no track on a
+   dark page, so the window's own edges are what show how far along it
+   is. */
+progress {
+  position: fixed;
+  left: 24px;
+  bottom: 22px;
+  width: calc(100% - 48px);
+  margin: 0;
+  accent-color: var(--accent);
+}
 `,
         backdrop: `/* Edit freely. The loader serves this file from inside the mod package,
    so anything you link to has to be in the theme folder with it. */
@@ -3389,7 +3444,8 @@ main {
   display: grid;
   align-content: end;
   justify-items: start;
-  padding: 0 56px 44px;
+  /* Deeper at the foot than the sides: the progress bar runs along it. */
+  padding: 0 56px 64px;
 }
 /* The icon is the page, not an element on it. */
 #icon {
@@ -3460,9 +3516,15 @@ button[hidden] { display: none; }
   font-weight: 600;
 }
 #install:hover, #launch:hover { background: #ffffff; border-color: #ffffff; }
+/* Across the window, not the card: a native bar shows no track on a
+   dark page, so the window's own edges are what show how far along it
+   is. */
 progress {
-  width: min(360px, 100%);
-  margin-top: 20px;
+  position: fixed;
+  left: 24px;
+  bottom: 22px;
+  width: calc(100% - 48px);
+  margin: 0;
   accent-color: var(--fg);
 }
 `,
@@ -3969,6 +4031,7 @@ progress {
           window.UpdateInfo = () => null;
           window.LookForUpdate = async () => null;
           window.ApplyUpdate = async () => { };
+          window.OnUpdate = (cb) => { window.__update = cb; };
           window.SwitchMod = async () => false;
           window.AddModFile = async () => null;
           window.OpenGameFolder = async () => { };
@@ -4173,11 +4236,24 @@ progress {
             "window, so a theme without one is never silent.",
         ],
         [
+          "#update",
+          "A button the app looks after for you. It checks for a newer " +
+            "release when the window opens and when the player quits the " +
+            "game, and only then shows this button, labelled with the new " +
+            "version; clicking it installs the update. Keep it in #actions " +
+            "and style it like your other buttons. A theme without one gets " +
+            "one added to #actions.",
+        ],
+        [
+          "OnUpdate(callback)",
+          "Say it in your own words instead: callback(update) gets the " +
+            "update the app found, or null. Registering it means the app " +
+            "shows no Update button of its own.",
+        ],
+        [
           "CheckUpdate(id?)",
-          "Look for a newer release of your mod. The app already checks on " +
-            "its own when it opens and when the player quits the game, and " +
-            "offers the update itself; this is for a theme that would rather " +
-            "say it in its own words.",
+          "Look for a newer release of your mod right now. Resolves to the " +
+            "update, or null.",
         ],
         ["UpdateInfo()", "The update the app has already found, or null."],
         ["ApplyUpdate(id?)", "Download and install an available update."],

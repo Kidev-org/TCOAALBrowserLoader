@@ -134,7 +134,7 @@ const APP_SHELL = [
   "/js/libs/json-diff.js",
   "/js/libs/mod-package.js",
   // The in-browser .tcoaalmod installer lang-shim loads on demand (Mods menu:
-  // "Add a mod file", and catalog mods published as a package).
+  // "Add a custom mod", and catalog mods published as a package).
   "/js/libs/mod-install.js",
   "/js/libs/mod-diff-worker.js",
   "/js/libs/pe-resources.js",

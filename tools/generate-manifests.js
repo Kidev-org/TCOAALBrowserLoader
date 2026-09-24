@@ -826,6 +826,7 @@ async function syncExtraMods(modsData) {
     };
     if (langFile) modsData[modId].langFile = langFile;
     if (drmType) modsData[modId].drmType = drmType;
+    if (existing.before) modsData[modId].before = existing.before;
 
     console.log(
       "[extras] " +
@@ -844,7 +845,8 @@ async function syncExtraMods(modsData) {
 /**
  * Write the catalog entry of a packaged extras mod (<EXTRAS_BASE>/<folder>/
  * <name>.tcoaalmod) from the package's own mod.json. Curated fields already in
- * mods.json (name, author, description, langFile, addedDate, icon) are kept.
+ * mods.json (name, author, description, langFile, addedDate, icon, before)
+ * are kept.
  * The icon is <folder>/icon.png on the host, which extras-host's deploy
  * extracts out of the package. `pkgFile` null keeps the existing entry (a run
  * without a local copy). Returns whether an entry was written or kept.
@@ -886,6 +888,7 @@ async function applyExtrasPackage(modsData, folder, pkgFile) {
   };
   var lang = existing.langFile || pkgLibs().ModInstall.detectLangFile(info.rels);
   if (lang) modsData[folder].langFile = lang;
+  if (existing.before) modsData[folder].before = existing.before;
   console.log(
     "[extras] " + folder + ": package " + path.basename(pkgFile) +
       " (v" + version + ", " + info.rels.length + " files)",
@@ -917,11 +920,31 @@ function reorderModsData(modsData) {
       base.push(key);
     }
   }
+  var order = placeBefore(modsData, base.concat(extras, translations));
   var ordered = {};
-  base.concat(extras, translations).forEach(function (key) {
+  order.forEach(function (key) {
     ordered[key] = modsData[key];
   });
   return ordered;
+}
+
+/**
+ * Honour a curated `before: "<key>"` field: that entry is moved to sit right
+ * in front of the named one. It is how an extras mod is placed among the local
+ * overhauls, which the grouping above would otherwise always put after them.
+ * A `before` naming a key that is not in the catalog leaves the entry where
+ * the grouping put it.
+ */
+function placeBefore(modsData, keys) {
+  var out = keys.slice();
+  keys.forEach(function (key) {
+    var target = modsData[key] && modsData[key].before;
+    if (typeof target !== "string" || target === key) return;
+    if (out.indexOf(target) === -1) return;
+    out.splice(out.indexOf(key), 1);
+    out.splice(out.indexOf(target), 0, key);
+  });
+  return out;
 }
 
 /** Fetch author and last update date from a GitHub repo. */

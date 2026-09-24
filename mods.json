@@ -4167,6 +4167,20 @@
     "version": "a638452",
     "drmType": "direct"
   },
+  "ROLESWAP": {
+    "name": "The Coffin of Leyley and Andy - Roleswap",
+    "addedDate": "2026-09-21",
+    "icon": "https://extras.tcoaal.app/mods/ROLESWAP/icon.png",
+    "author": "Crimson Lily",
+    "lastUpdate": "2026-09-21",
+    "path": "https://extras.tcoaal.app/mods/ROLESWAP",
+    "type": "overhaul",
+    "description": "A retelling of the original story in an alternate universe where the graves siblings switches their ages.",
+    "version": "1.0.3",
+    "package": "https://extras.tcoaal.app/mods/ROLESWAP/roleswap-1.0.3.tcoaalmod",
+    "langFile": "data/9c7050ae76645487",
+    "before": "TDOAAL"
+  },
   "TDOAAL": {
     "name": "The Dubbing Of Andy And Leyley",
     "icon": "mods/TDOAAL/www/img/titles1/title.png",
@@ -8672,19 +8686,6 @@
     ],
     "langFile": "languages/english/dialogue.loc",
     "drmType": "none"
-  },
-  "ROLESWAP": {
-    "name": "The Coffin of Leyley and Andy - Roleswap",
-    "addedDate": "2026-09-21",
-    "icon": "https://extras.tcoaal.app/mods/ROLESWAP/icon.png",
-    "author": "Crimson Lily",
-    "lastUpdate": "2026-09-21",
-    "path": "https://extras.tcoaal.app/mods/ROLESWAP",
-    "type": "overhaul",
-    "description": "A retelling of the original story in an alternate universe where the graves siblings switches their ages.",
-    "version": "1.0.3",
-    "package": "https://extras.tcoaal.app/mods/ROLESWAP/roleswap-1.0.3.tcoaalmod",
-    "langFile": "data/9c7050ae76645487"
   },
   "translation_BASE_chinese": {
     "name": "Chinese",

@@ -376,9 +376,10 @@
         border-top: 1px solid rgba(127, 127, 127, 0.28);
       }
       /*
-       * What the app has to say on its own account: an update waiting, or
-       * Steam being down, neither of which a theme knows about. Stacked above
-       * the error bar, which is for something that already went wrong.
+       * What the app has to say on its own account: Steam being down, which
+       * a theme knows nothing about, or an update for a theme with no row of
+       * buttons to put the Update button in. Stacked above the error bar,
+       * which is for something that already went wrong.
        */
       #notice {
         position: fixed;
@@ -535,9 +536,15 @@
       button[hidden] {
         display: none;
       }
+      /* A native bar shows no track on a dark page, so one only as wide as
+         the card gives no sense of where it ends. Across the window, the
+         window's own edges are the scale. */
       progress {
-        width: 100%;
-        margin-top: 16px;
+        position: fixed;
+        left: 24px;
+        bottom: 22px;
+        width: calc(100% - 48px);
+        margin: 0;
         accent-color: var(--accent);
       }
       progress[hidden] {
@@ -677,6 +684,7 @@
           <div id="actions">
             <button id="install" class="primary" hidden>Install</button>
             <button id="launch" class="primary" hidden>Play</button>
+            <button id="update" hidden>Update</button>
             <button id="uninstall" hidden>Uninstall</button>
             <button id="pick" hidden>Choose the game folder</button>
             <button id="open-mod" hidden>Open a mod file</button>
@@ -741,6 +749,8 @@
           // The newest release found for the current face, once a check has
           // run: { id, version, current, ... } or null.
           update: null,
+          updateCb: null, // the theme's OnUpdate callback, if it has one
+          // Only for the fallback bar (a theme with nowhere to put a button).
           updateDismissed: "",
         };
 
@@ -1099,7 +1109,7 @@
           });
           await refreshGame();
           State.update = null;
-          paintNotices();
+          paintUpdate();
           return res;
         };
 
@@ -1278,7 +1288,7 @@
             found = null;
           }
           State.update = found;
-          paintNotices();
+          paintUpdate();
         }
 
         /** The update the app has found and not yet been told to forget. */
@@ -1292,19 +1302,106 @@
           return State.update;
         };
 
+        /*
+         * A theme that wants to say it in its own words: callback(update) with
+         * the same object UpdateInfo() returns, or null once there is none.
+         * Registering one hands the whole presentation to the theme, so the
+         * app puts up no button of its own.
+         */
+        window.OnUpdate = function (cb) {
+          State.updateCb = typeof cb === "function" ? cb : null;
+          paintUpdate();
+        };
+
         // ===================================================================
-        // Notices
+        // The Update button, and the notices
         // ===================================================================
 
-        function paintNotices() {
+        /*
+         * An update is offered the way Install and Uninstall are: as a button
+         * among the theme's own, there only while there is something to
+         * install. It used to be a bar pinned over the bottom of the window,
+         * which sat on top of whatever the theme had put there.
+         *
+         * The button is the shell's even though it lives in the theme's row.
+         * A theme can place and style it by shipping `<button id="update"
+         * hidden>` itself (the built-in theme and every preset do); a theme
+         * written before that gets one added to its `#actions`, wearing the
+         * class of the theme's own Uninstall button so its stylesheet applies.
+         * Only a theme with neither falls back to the notice bar, since an
+         * update nobody is told about is worse than a bar.
+         */
+        function updateButton(show) {
+          const theirs = document.querySelector("#root #update");
+          if (theirs) return theirs;
+          const row = document.querySelector("#root #actions");
+          if (!row || !show) return null;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.id = "update";
+          const peer =
+            row.querySelector("#uninstall") || row.querySelector("button");
+          if (peer && peer.className) btn.className = peer.className;
+          btn.classList.remove("primary");
+          const after = row.querySelector("#launch");
+          if (after && after.parentNode === row) after.after(btn);
+          else row.appendChild(btn);
+          return btn;
+        }
+
+        function versionLabel(v) {
+          return /^\d/.test(v) ? "v" + v : v;
+        }
+
+        async function runUpdate(btn) {
           const up = State.update;
-          const showUp = !!(
-            up &&
-            up.version &&
-            up.version !== State.updateDismissed
-          );
+          if (!up) return;
+          if (btn) btn.disabled = true;
+          try {
+            await window.ApplyUpdate(up.id);
+            // The installed copy, its theme and its version all just changed:
+            // the shortest honest way to show that is to start the window
+            // again on what is now there.
+            window.location.reload();
+          } catch (e) {
+            /* call() has already put the reason on the screen */
+            if (btn) btn.disabled = false;
+          }
+        }
+
+        function paintUpdate() {
+          const up = State.update && State.update.version ? State.update : null;
+          let banner = false;
+
+          if (State.updateCb) {
+            try {
+              State.updateCb(up);
+            } catch (e) {
+              /* a theme's own callback must not take the app down */
+            }
+          } else {
+            const btn = updateButton(!!up);
+            if (btn) {
+              // "Update", like Install and Uninstall beside it: a version
+              // number on the button wraps it onto two lines in a row of
+              // three. The version is one hover away.
+              btn.textContent = "Update";
+              btn.title = up
+                ? versionLabel(up.version) +
+                  " is available" +
+                  (up.current
+                    ? " (you have " + versionLabel(up.current) + ")"
+                    : "")
+                : "";
+              btn.hidden = !up;
+              btn.onclick = () => runUpdate(btn);
+            } else {
+              banner = !!(up && up.version !== State.updateDismissed);
+            }
+          }
+
           const me = faceMod();
-          document.getElementById("notice-update-text").textContent = showUp
+          document.getElementById("notice-update-text").textContent = banner
             ? (me && me.name ? me.name : "This mod") +
               " " +
               up.version +
@@ -1312,31 +1409,27 @@
               (up.current ? " (you have " + up.current + ")" : "") +
               "."
             : "";
-          document.getElementById("notice-update").hidden = !showUp;
+          document.getElementById("notice-update").hidden = !banner;
+          paintNoticeBar();
+        }
 
-          const showSteam = State.steam === false;
-          document.getElementById("notice-steam").hidden = !showSteam;
-          document.getElementById("notice").hidden = !showUp && !showSteam;
+        function paintNotices() {
+          document.getElementById("notice-steam").hidden = State.steam !== false;
+          paintNoticeBar();
+        }
+
+        function paintNoticeBar() {
+          document.getElementById("notice").hidden =
+            document.getElementById("notice-update").hidden &&
+            document.getElementById("notice-steam").hidden;
         }
 
         document.getElementById("notice-update-later").onclick = function () {
           State.updateDismissed = (State.update && State.update.version) || "";
-          paintNotices();
+          paintUpdate();
         };
         document.getElementById("notice-update-go").onclick = function () {
-          const up = State.update;
-          if (!up) return;
-          window
-            .ApplyUpdate(up.id)
-            .then(function () {
-              // The installed copy, its theme and its version all just
-              // changed: the shortest honest way to show that is to start the
-              // window again on what is now there.
-              window.location.reload();
-            })
-            .catch(function () {
-              /* call() has already put the reason on the screen */
-            });
+          runUpdate(null);
         };
         document.getElementById("notice-steam-recheck").onclick = pollSteam;
 
@@ -1484,7 +1577,7 @@
           const who = document.createElement("span");
           who.className = "who";
           const name = document.createElement("b");
-          name.textContent = "Add a mod file...";
+          name.textContent = "Add a custom mod...";
           const sub = document.createElement("span");
           sub.textContent = "Or drop a .tcoaalmod on this window";
           who.append(name, sub);
