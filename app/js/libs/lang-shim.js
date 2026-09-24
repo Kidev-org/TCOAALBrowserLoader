@@ -348,6 +348,10 @@
   // The icon a user-added .tcoaalmod carried, as PNG bytes. Kept out of the
   // registry blob so the registry stays small enough to read on every boot.
   var MOD_ICON_KEY_PREFIX = "__mod_icon__:";
+  // A catalog package's icon as read out of the package itself, whether or
+  // not the mod is installed: {url: packageUrl(entry), bytes}. The URL
+  // carries the version, so a republished package misses and is read again.
+  var MOD_ICON_CACHE_PREFIX = "__mod_icon_cache__:";
   // localStorage: the active user-added mod's language file (see the
   // __modLangFile setup below).
   var ACTIVE_MOD_LANG_FILE_KEY = "_activeModLangFile";
@@ -1687,13 +1691,21 @@
   }
 
   // A mod's Mods-menu thumbnail. A catalog mod published as one .tcoaalmod
-  // has three places its icon can come from, best first: the icon its
-  // installed package carried (kept in IDB at install, so it is the installed
-  // version's and works offline), the catalog's icon URL (an icon.png a host
-  // extracted beside the package), and the package itself, streamed only as
-  // far as the icon (ModPackage.fetchEntry). The last one means a host that
-  // never extracted the icon, or one that has not redeployed since the
-  // package changed, still shows it.
+  // has these places its icon can come from, best first:
+  //   1. the icon its installed package carried (kept in IDB at install), but
+  //      only while the installed version is the catalog's: an update must
+  //      show the new icon, like every other mod's `fresh` thumbnail does;
+  //   2. the icon an earlier visit read out of THIS version's package
+  //      (MOD_ICON_CACHE_PREFIX, keyed by the versioned package URL);
+  //   3. the catalog's icon URL (an icon.png a host extracted beside the
+  //      package);
+  //   4. the package itself, streamed only as far as the icon
+  //      (ModPackage.fetchEntry), which is stored as (2) for next time. This
+  //      is what a host that never extracted the icon, or has not redeployed
+  //      since the package changed, falls to, and a CDN in front of a
+  //      package of hundreds of MB can take seconds to send its first byte;
+  //   5. the installed icon of an older version, so an outdated install
+  //      still has a thumbnail offline.
   // Every other mod keeps its single URL (a user-added one's is already a
   // blob: of the icon its package carried).
   function loadModIconBitmap(mod) {
@@ -1703,13 +1715,43 @@
     }
     return loadSafeBitmapFrom([
       function () {
-        return storedModIconUrl(mod.key);
+        return installedModVersionIs(mod.key, entry.version || "").then(
+          function (current) {
+            return current ? storedModIconUrl(mod.key) : null;
+          },
+        );
+      },
+      function () {
+        return cachedPackageIconUrl(mod.key, entry);
       },
       mod.icon ? modIconUrl(mod.icon) : null,
       function () {
         return packageIconUrl(mod.key, entry);
       },
+      function () {
+        return storedModIconUrl(mod.key);
+      },
     ]);
+  }
+
+  // Whether the installed copy of `key` is `version` (false when it is not
+  // installed or IDB cannot be read).
+  function installedModVersionIs(key, version) {
+    return new Promise(function (resolve) {
+      openAssetsDb(function (db) {
+        if (!db) {
+          resolve(false);
+          return;
+        }
+        getAssetMain(db, "__mod_meta__:" + key, function (val) {
+          var meta = null;
+          try {
+            meta = typeof val === "string" ? JSON.parse(val) : val;
+          } catch (e) {}
+          resolve(!!meta && (meta.version || "") === version);
+        });
+      });
+    });
   }
 
   // blob: URLs, one per mod, so reopening the Mods menu does not re-read IDB
@@ -1761,11 +1803,11 @@
     }
   }
 
-  function packageIconUrl(key, entry) {
-    var url = packageUrl(entry);
+  // Make `promise` (of a blob: URL) the one icon of package `url` for `key`,
+  // revoking the blob of a previous version's.
+  function rememberPackageIcon(key, url, promise) {
     var memo = _packageIconUrls[key];
-    if (memo && memo.url === url) return memo.promise;
-    if (memo) {
+    if (memo && memo.url !== url) {
       memo.promise.then(function (old) {
         if (old) {
           try {
@@ -1774,11 +1816,7 @@
         }
       });
     }
-    var promise = ensureModInstallLibs()
-      .then(function () {
-        return window.ModPackage.fetchEntry(url, "icon.png", fetch.bind(window));
-      })
-      .then(blobUrlOf);
+    _packageIconUrls[key] = { url: url, promise: promise };
     // A failure (offline, a host without range support) is not remembered:
     // the next visit to the Mods menu asks again.
     promise.catch(function () {
@@ -1786,8 +1824,55 @@
         delete _packageIconUrls[key];
       }
     });
-    _packageIconUrls[key] = { url: url, promise: promise };
     return promise;
+  }
+
+  // The icon an earlier visit read out of this very package version, or null.
+  // Never touches the network.
+  function cachedPackageIconUrl(key, entry) {
+    var url = packageUrl(entry);
+    var memo = _packageIconUrls[key];
+    if (memo && memo.url === url) return memo.promise;
+    return new Promise(function (resolve) {
+      openAssetsDb(function (db) {
+        if (!db) {
+          resolve(null);
+          return;
+        }
+        getAssetMain(db, MOD_ICON_CACHE_PREFIX + key, function (val) {
+          resolve(val && val.url === url && val.bytes ? val.bytes : null);
+        });
+      });
+    }).then(function (bytes) {
+      if (!bytes) return null;
+      // The network read may have landed while IDB answered.
+      var m = _packageIconUrls[key];
+      if (m && m.url === url) return m.promise;
+      return rememberPackageIcon(key, url, Promise.resolve(blobUrlOf(bytes)));
+    });
+  }
+
+  function packageIconUrl(key, entry) {
+    var url = packageUrl(entry);
+    var memo = _packageIconUrls[key];
+    if (memo && memo.url === url) return memo.promise;
+    var promise = ensureModInstallLibs()
+      .then(function () {
+        return window.ModPackage.fetchEntry(url, "icon.png", fetch.bind(window));
+      })
+      .then(function (bytes) {
+        if (bytes && bytes.length) {
+          // One entry per mod, overwritten when the package version moves.
+          var copy = bytes.slice().buffer;
+          openAssetsDb(function (db) {
+            if (db) {
+              putAsset(db, MOD_ICON_CACHE_PREFIX + key, { url: url, bytes: copy });
+            }
+          });
+        }
+        return blobUrlOf(bytes);
+      });
+    return rememberPackageIcon(key, url, promise);
   }
 
   // Browser Fullscreen API helpers

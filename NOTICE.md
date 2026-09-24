@@ -107,10 +107,7 @@ retrieved from Steam or Nexus Mods directly. That mirror is a technical
 requirement of running in a browser, not a claim over the works. They remain
 their authors', are credited to them, and were published by them for the
 community to use with the game. Any author who would rather their work not be
-mirrored can write to pro@kidev.org and it will be removed.
-
-This project ships no tooling for authoring mods, and no way to import a
-user-supplied mod file. It installs only the community works in that registry.
+mirrored can write to pro@kidev.org and it will be removed.  
 
 ## On the technological measures in the retail build
 
