@@ -1966,10 +1966,35 @@
           // Build the repair list: {id, entry, missing[]} for each active,
           // installed mod with manifest files absent from IDB.
           var repairs = [];
+          // Packaged catalog mods (entry.package) have no file list to diff:
+          // the package is the unit. The active one is reinstalled from it
+          // when the catalog carries another version than the one installed.
+          var packageUpdates = [];
           var scan = Promise.resolve();
           ids.forEach(function (id) {
             scan = scan.then(function () {
               var entry = modsData[id];
+              if (entry && entry.package) {
+                if (id !== activeOverhaul) return;
+                return Promise.all([
+                  idbGet(db, "__mod_meta__:" + id),
+                  idbGetAllKeys(db, "mod:" + id + ":"),
+                ]).then(function (res) {
+                  if (res[0] == null && !res[1].length) {
+                    return deactivateOverhaul(db, id);
+                  }
+                  var meta = {};
+                  try {
+                    meta =
+                      typeof res[0] === "string"
+                        ? JSON.parse(res[0])
+                        : res[0] || {};
+                  } catch (e) {}
+                  if (res[0] != null && meta.version === (entry.version || ""))
+                    return;
+                  packageUpdates.push({ id: id, entry: entry });
+                });
+              }
               var files = entry && entry.files;
               if (!entry || !files || !files.length) return;
               // A remote translation has its own repair path; skip it here.
@@ -2005,69 +2030,151 @@
             });
           });
 
-          return scan.then(function () {
-            if (!repairs.length) return;
+          return scan
+            .then(function () {
+              return updateActivePackages(db, packageUpdates);
+            })
+            .then(function () {
+              if (!repairs.length) return;
 
-            showUpdateSplash("Updating mods...");
+              showUpdateSplash("Updating mods...");
 
-            // Repair each mod in turn. wwwBase mirrors installMod: a remote
-            // (absolute-URL) path serves files directly; a local path keeps the
-            // www/ layout under /{path}/www/.
-            var chain = Promise.resolve();
-            repairs.forEach(function (r) {
-              chain = chain.then(function () {
-                var path = String(r.entry.path || "").replace(/\/$/, "");
-                var isRemote = /^https?:\/\//i.test(path);
-                var base = isRemote ? path + "/" : "/" + path + "/www/";
-                var ok = true;
-                var sub = Promise.resolve();
-                r.missing.forEach(function (rel) {
-                  sub = sub.then(function () {
-                    if (!ok) return;
-                    return fetch(base + rel)
-                      .then(function (res) {
-                        if (!res.ok) throw new Error(String(res.status));
-                        return res.arrayBuffer();
-                      })
-                      .then(function (buf) {
-                        return idbPut(db, "mod:" + r.id + ":" + rel, buf);
-                      })
-                      .catch(function () {
-                        ok = false;
-                      });
+              // Repair each mod in turn. wwwBase mirrors installMod: a remote
+              // (absolute-URL) path serves files directly; a local path keeps the
+              // www/ layout under /{path}/www/.
+              var chain = Promise.resolve();
+              repairs.forEach(function (r) {
+                chain = chain.then(function () {
+                  var path = String(r.entry.path || "").replace(/\/$/, "");
+                  var isRemote = /^https?:\/\//i.test(path);
+                  var base = isRemote ? path + "/" : "/" + path + "/www/";
+                  var ok = true;
+                  var sub = Promise.resolve();
+                  r.missing.forEach(function (rel) {
+                    sub = sub.then(function () {
+                      if (!ok) return;
+                      return fetch(base + rel)
+                        .then(function (res) {
+                          if (!res.ok) throw new Error(String(res.status));
+                          return res.arrayBuffer();
+                        })
+                        .then(function (buf) {
+                          return idbPut(db, "mod:" + r.id + ":" + rel, buf);
+                        })
+                        .catch(function () {
+                          ok = false;
+                        });
+                    });
+                  });
+                  return sub.then(function () {
+                    if (!ok) return; // partial: keep stale meta, retry next time
+                    // Every missing file is now stored. Advance the mod's meta to
+                    // the current manifest version and file count so the repair
+                    // sticks, preserving other meta fields (e.g. langParseVer).
+                    return idbGet(db, "__mod_meta__:" + r.id).then(
+                      function (rawMeta) {
+                        var meta = {};
+                        try {
+                          meta =
+                            typeof rawMeta === "string"
+                              ? JSON.parse(rawMeta)
+                              : rawMeta || {};
+                        } catch (e) {
+                          meta = {};
+                        }
+                        meta.version = r.entry.version || meta.version || "";
+                        meta.files = (r.entry.files || []).length;
+                        meta.date = new Date().toISOString().substring(0, 10);
+                        return idbPut(
+                          db,
+                          "__mod_meta__:" + r.id,
+                          JSON.stringify(meta),
+                        );
+                      },
+                    );
                   });
                 });
-                return sub.then(function () {
-                  if (!ok) return; // partial: keep stale meta, retry next time
-                  // Every missing file is now stored. Advance the mod's meta to
-                  // the current manifest version and file count so the repair
-                  // sticks, preserving other meta fields (e.g. langParseVer).
-                  return idbGet(db, "__mod_meta__:" + r.id).then(
-                    function (rawMeta) {
-                      var meta = {};
-                      try {
-                        meta =
-                          typeof rawMeta === "string"
-                            ? JSON.parse(rawMeta)
-                            : rawMeta || {};
-                      } catch (e) {
-                        meta = {};
-                      }
-                      meta.version = r.entry.version || meta.version || "";
-                      meta.files = (r.entry.files || []).length;
-                      meta.date = new Date().toISOString().substring(0, 10);
-                      return idbPut(
-                        db,
-                        "__mod_meta__:" + r.id,
-                        JSON.stringify(meta),
-                      );
-                    },
-                  );
+              });
+              return chain;
+            });
+        }
+
+        // Reinstall each packaged mod in `list` from its catalog package,
+        // through the same installer the Mods menu uses (mod-install.js).
+        // Best-effort like the file repair above: offline, a failed download
+        // or a package that does not fit this game leaves the installed
+        // version in place (meta untouched, so the next boot tries again) and
+        // the game boots on it.
+        function updateActivePackages(db, list) {
+          if (!list.length) return Promise.resolve();
+          showUpdateSplash("Updating mods...");
+          return loadScripts(
+            [
+              "js/libs/tcoaal-codec.js",
+              "js/libs/json-diff.js",
+              "js/libs/mod-package.js",
+              "js/libs/mod-install.js",
+            ],
+            0,
+          )
+            .then(function () {
+              var chain = Promise.resolve();
+              list.forEach(function (u) {
+                chain = chain.then(function () {
+                  return updateActivePackage(db, u.id, u.entry);
                 });
               });
+              return chain;
+            })
+            .catch(function (e) {
+              console.warn("[boot] mod installer unavailable:", e);
             });
-            return chain;
-          });
+        }
+
+        function updateActivePackage(db, id, entry) {
+          var MI = window.ModInstall;
+          var version = entry.version || "";
+          var pkg = String(entry.package);
+          var url = /^https?:/i.test(pkg) ? pkg : "/" + pkg.replace(/^[/]+/, "");
+          if (version) url += "?v=" + encodeURIComponent(version);
+          return MI.fetchBytes(fetch.bind(window), url, null, null)
+            .then(function (bytes) {
+              return MI.install({
+                store: MI.idbStore(db, STORE_NAME),
+                bytes: bytes,
+                id: id,
+                fetch: fetch.bind(window),
+              });
+            })
+            .then(function (r) {
+              // The language cache is the file the installer found by
+              // content; without one the service worker rebuilds it from the
+              // new files on the first /lang-data.json.
+              var cache = r.langData
+                ? idbPut(db, "__mod_lang_data__:" + id, r.langData)
+                : idbDelete(db, "__mod_lang_data__:" + id);
+              return cache.then(function () {
+                return idbPut(
+                  db,
+                  "__mod_meta__:" + id,
+                  JSON.stringify({
+                    version: version,
+                    date: new Date().toISOString().substring(0, 10),
+                    files: r.files.length,
+                    package: true,
+                  }),
+                );
+              });
+            })
+            .then(function () {
+              var sw = navigator.serviceWorker;
+              if (sw && sw.controller) {
+                sw.controller.postMessage({ type: "resetGameCaches" });
+              }
+            })
+            .catch(function (e) {
+              console.warn("[boot] could not update " + id + ":", e);
+            });
         }
 
         // Step 2c: load favicon from IDB (icon/icon.png from the user's game files)

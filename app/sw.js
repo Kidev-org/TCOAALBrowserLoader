@@ -133,6 +133,9 @@ const APP_SHELL = [
   "/js/libs/tcoaal-codec.js",
   "/js/libs/json-diff.js",
   "/js/libs/mod-package.js",
+  // The in-browser .tcoaalmod installer lang-shim loads on demand (Mods menu:
+  // "Add a mod file", and catalog mods published as a package).
+  "/js/libs/mod-install.js",
   "/js/libs/mod-diff-worker.js",
   "/js/libs/pe-resources.js",
   "/js/libs/icns.js",
@@ -662,6 +665,21 @@ async function catalogEntry(db, modId) {
     if (typeof text !== "string") return null;
     const catalog = JSON.parse(text);
     return (catalog && catalog[modId]) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The registry record of a mod the user added from a .tcoaalmod
+ * (__imported_mods__, written by lang-shim), which names its langFile the way
+ * a catalog entry does; null if unknown.
+ */
+async function importedModEntry(db, modId) {
+  try {
+    const raw = await getAsset(db, "__imported_mods__");
+    const reg = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return (reg && reg[modId]) || null;
   } catch {
     return null;
   }
@@ -1266,13 +1284,19 @@ async function loadModLangData(db, modId) {
   // 1. The mod's own language file, as named by its catalog entry. A .csv /
   //    .txt (translation sources) needs lang-format.js's parser and is left
   //    to the page's own refresh path; everything else is JSON in some wrapper.
-  const entry = await catalogEntry(db, modId);
+  const entry =
+    (await catalogEntry(db, modId)) || (await importedModEntry(db, modId));
   const langFile =
     entry && typeof entry.langFile === "string" ? entry.langFile : "";
   const candidates = [];
   if (langFile && !/\.(csv|txt)$/i.test(langFile)) candidates.push(langFile);
-  // 2. Historical layouts: TCOAAR-style .loc, then a CLD stored like the base game's.
-  for (const rel of ["languages/english/dialogue.loc", CLD_KEY]) {
+  // 2. Historical layouts: TCOAAR-style .loc, TLCOAAA-style data/dialogues,
+  //    then a CLD stored like the base game's.
+  for (const rel of [
+    "languages/english/dialogue.loc",
+    "data/dialogues",
+    CLD_KEY,
+  ]) {
     if (candidates.indexOf(rel) < 0) candidates.push(rel);
   }
   for (const rel of candidates) {
@@ -1680,13 +1704,19 @@ self.addEventListener("message", (event) => {
 
   if (data.type === "resetGameCaches") {
     // Sent by the loader after a physical base-game version swap (renaming
-    // IDB keys between the plain namespace and gamever:{id}:). A still-
+    // IDB keys between the plain namespace and gamever:{id}:), and by the page
+    // after it lays a .tcoaalmod down (a mod's files, and so possibly its own
+    // DRM plugins, changed under this worker). A still-
     // running SW instance is not guaranteed to restart across the loader's
     // navigation to index.html, so purely-derived per-version caches must
     // be dropped explicitly or a stale worker could serve mismatched-
     // version content (wrong DRM payload, wrong case-insensitive directory
     // hits from _ciCache).
+    // Both halves of the case-insensitive index: with only the map cleared,
+    // a directory already marked scanned is never scanned again, and every
+    // case-insensitive lookup under it misses until the worker restarts.
     _ciCache.clear();
+    _ciScannedDirs.clear();
     _drmCache = null;
     _drmAttempted = false;
     const ack = openDB()
@@ -2013,6 +2043,7 @@ self.addEventListener("fetch", (event) => {
     logicalPath === "js/libs/tcoaal-codec.js" ||
     logicalPath === "js/libs/json-diff.js" ||
     logicalPath === "js/libs/mod-package.js" ||
+    logicalPath === "js/libs/mod-install.js" ||
     logicalPath === "js/libs/mod-diff-worker.js" ||
     logicalPath === "js/libs/pe-resources.js" ||
     logicalPath === "js/libs/icns.js" ||
@@ -2061,6 +2092,17 @@ self.addEventListener("fetch", (event) => {
       event.respondWith(serveModMenuIcon(mi[1], mi[2], event.request));
       return;
     }
+  }
+
+  // A catalog mod published as one package (mods/{id}/{name}.tcoaalmod) and
+  // the icon tools/generate-manifests.js extracts beside it. Neither is a game
+  // file, so neither goes near the IDB lookup chain below: straight to the
+  // network, which is the only place they exist. The package is read once at
+  // install and laid down in IDB; it is not cached here.
+  if (/^mods\/[^/]+\/[^/]+\.tcoaalmod$/i.test(logicalPath) ||
+      /^mods\/[^/]+\/icon\.png$/i.test(logicalPath)) {
+    event.respondWith(fetch(event.request));
+    return;
   }
 
   // Mod-asset paths: /mods/{id}/www/{rel}. Handled by a dedicated strategy

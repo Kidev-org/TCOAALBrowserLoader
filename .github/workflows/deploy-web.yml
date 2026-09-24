@@ -123,6 +123,11 @@ jobs:
         with:
           node-version: 20
 
+      # A mod published as one .tcoaalmod (mods/<id>/<name>.tcoaalmod) shows
+      # the icon its package carries: pull it out beside the file.
+      - name: Extract packaged mod icons
+        run: node tools/generate-manifests.js --package-icons _site/mods
+
       - name: Minify and stamp
         run: |
           for f in _site/*.html; do

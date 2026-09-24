@@ -1225,27 +1225,30 @@
         </fieldset>
 
         <p class="hint">
-          Update checks. Fill in either source, both, or neither. The installer
-          asks when it opens and again when the player quits the game, and
-          offers them the update if anything newer than the version above has
-          been published. An online installer already knows where your mod
-          lives and checks there, so it needs nothing here.
+          Update checks. Publish your <code>.tcoaalmod</code> as a GitHub
+          release and name the repo here: the installer asks when it opens and
+          again when the player quits the game, and offers them the update if a
+          newer release than the version above has been published. An online
+          installer already knows where your mod lives and checks there, so it
+          needs nothing here.
         </p>
-        <div class="field-row">
-          <div class="field">
-            <label for="meta-update-github">GitHub repo</label>
-            <input
-              type="text"
-              id="meta-update-github"
-              placeholder="owner/repo"
-              autocomplete="off"
-            />
-            <p class="field-hint">
-              The installer reads your newest GitHub release and takes the
-              <code>.tcoaalmod</code> attached to it.
-            </p>
-            <p class="field-error" id="meta-update-github-error"></p>
-          </div>
+        <div class="field">
+          <label for="meta-update-github">GitHub repo</label>
+          <input
+            type="text"
+            id="meta-update-github"
+            placeholder="owner/repo"
+            autocomplete="off"
+          />
+          <p class="field-hint">
+            The installer reads your newest GitHub release and takes the
+            <code>.tcoaalmod</code> attached to it. A full
+            <code>https://github.com/owner/repo</code> link works too.
+          </p>
+          <p class="field-error" id="meta-update-github-error"></p>
+        </div>
+        <details class="field" id="meta-update-manifest-box">
+          <summary>Hosting updates somewhere other than GitHub</summary>
           <div class="field">
             <label for="meta-update-manifest">Update file URL</label>
             <input
@@ -1255,8 +1258,7 @@
               autocomplete="off"
             />
             <p class="field-hint">
-              For hosting updates yourself. Point this at a small JSON file you
-              keep current:
+              Point this at a small JSON file you keep current:
               <code
                 >{"version": "1.1.0", "url":
                 "https://example.com/mod-id.tcoaalmod"}</code
@@ -1264,7 +1266,7 @@
             </p>
             <p class="field-error" id="meta-update-manifest-error"></p>
           </div>
-        </div>
+        </details>
       </section>
 
       <section class="pane" id="pane-theme" hidden>
@@ -1791,6 +1793,7 @@
         if (!$gh.value.trim()) {
           $gh.value = slug;
           showFieldError("meta-update-github", "");
+          syncOnlineUrlFromGithub();
           filled.push("the GitHub repo");
         }
         const $id = document.getElementById("meta-id");
@@ -2231,9 +2234,41 @@
 
       function validateGithub(v) {
         if (!v) return null;
-        return isGithubSlug(v)
+        return githubRepoSlug(v)
           ? null
           : "Use the owner/repo form, such as octocat/hello-world.";
+      }
+
+      // The repo field takes owner/repo or anything a modder copies out of
+      // the browser's address bar (the repo page, its releases page, its .git
+      // clone URL). null when it names no repo.
+      function githubRepoSlug(v) {
+        const s = String(v || "").trim();
+        if (!s) return null;
+        if (isGithubSlug(s)) return s;
+        return githubSlugFromUrl(
+          s.replace(/\/releases(\/latest)?\/?$/i, ""),
+        );
+      }
+
+      // The online installer's "where your mod is published" field follows
+      // the update repo while the modder has not typed one of their own: the
+      // same GitHub releases feed answers both questions. _autoOnlineUrl is
+      // the value this last wrote, so a field that no longer holds it was
+      // edited by hand and is left alone from then on.
+      let _autoOnlineUrl = "";
+      function syncOnlineUrlFromGithub() {
+        const $url = document.getElementById("stamp-online-url");
+        const current = $url.value.trim();
+        if (current && current !== _autoOnlineUrl) return;
+        const slug = githubRepoSlug(
+          document.getElementById("meta-update-github").value,
+        );
+        const next = slug ? "https://github.com/" + slug : "";
+        if (next === current) return;
+        $url.value = next;
+        _autoOnlineUrl = next;
+        syncOnlineField();
       }
 
       function validateManifestUrl(v) {
@@ -2308,6 +2343,17 @@
           showFieldError(fieldId, validator($el.value.trim()));
         });
       });
+
+      (function () {
+        const $gh = document.getElementById("meta-update-github");
+        $gh.addEventListener("input", syncOnlineUrlFromGithub);
+        // A pasted repo URL is stored as the owner/repo it names, which is
+        // the shape the update source carries.
+        $gh.addEventListener("change", function () {
+          const slug = githubRepoSlug($gh.value);
+          if (slug && slug !== $gh.value.trim()) $gh.value = slug;
+        });
+      })();
 
       document
         .getElementById("meta-saves-shared")
@@ -2632,6 +2678,11 @@
           const err = validator($el.value.trim());
           showFieldError(fieldId, err);
           if (err) ok = false;
+          // The self-hosted source lives in a collapsed box: an error inside
+          // it would be painted where nobody can see it.
+          if (err && fieldId === "meta-update-manifest") {
+            document.getElementById("meta-update-manifest-box").open = true;
+          }
         });
         if (!_iconValid) {
           showFieldError(
@@ -2649,9 +2700,9 @@
       function getMeta() {
         if (!validateMetaForm()) return null;
 
-        const github = document
-          .getElementById("meta-update-github")
-          .value.trim();
+        const github = githubRepoSlug(
+          document.getElementById("meta-update-github").value,
+        );
         const manifest = document
           .getElementById("meta-update-manifest")
           .value.trim();
@@ -4963,12 +5014,9 @@ progress {
       function onlineSource(raw) {
         const v = String(raw || "").trim();
         if (!v) return { error: "Paste the link your mod is published at." };
-        if (isGithubSlug(v)) return { github: v };
-        // ".../releases" and ".../releases/latest" name the repo, not a file;
-        // githubSlugFromUrl matches only a bare owner/repo tail.
-        const slug = githubSlugFromUrl(
-          v.replace(/\/releases(\/latest)?\/?$/i, ""),
-        );
+        // A repo, its page or its releases page all name the repo, not a
+        // file (githubRepoSlug), and install its newest release.
+        const slug = githubRepoSlug(v);
         if (slug) return { github: slug };
         let u;
         try {

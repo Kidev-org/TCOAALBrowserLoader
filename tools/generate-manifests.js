@@ -23,8 +23,18 @@
  *   and author defaults to "kidev".
  * - Non-_ mods with a "repo" field get author and lastUpdate fetched from
  *   the GitHub API.
+ * - A mod folder holding a .tcoaalmod and no www/ (mods/<id>/<name>.tcoaalmod)
+ *   is a PACKAGED mod: its entry names the file as `package` instead of
+ *   listing files, takes its name, author, description and version from the
+ *   package's own mod.json, and gets the package's icon extracted beside it
+ *   as mods/<id>/icon.png. A new such folder is added to mods.json on its
+ *   own, so publishing a third-party mod is dropping its .tcoaalmod into a
+ *   folder and running this script.
  *
  * Usage: node tools/generate-manifests.js
+ *        node tools/generate-manifests.js --package-icons <mods dir>
+ *          (only extract packaged mods' icons into <mods dir>; no network,
+ *          no mods.json. The deploy runs this over the copied site.)
  */
 
 "use strict";
@@ -33,6 +43,7 @@ var fs = require("fs");
 var path = require("path");
 var cp = require("child_process");
 var https = require("https");
+var vm = require("vm");
 
 // Tools live in tools/; project root is one level up.
 var ROOT = path.join(__dirname, "..");
@@ -174,6 +185,178 @@ function getModVersion(modDir) {
     if (ver) return ver;
   } catch (e) {}
   return "";
+}
+
+// Packaged mods (mods/<id>/<name>.tcoaalmod)
+
+// ModPackage and ModInstall are the browser's own libraries, run in a vm the
+// way tools/mod-loader.js runs them: the entry written here describes the
+// package exactly as the page that installs it will read it.
+var _pkgLibs = null;
+function pkgLibs() {
+  if (_pkgLibs) return _pkgLibs;
+  var ctx = vm.createContext({
+    self: {},
+    crypto: globalThis.crypto || require("crypto").webcrypto,
+    TextEncoder: TextEncoder,
+    TextDecoder: TextDecoder,
+    CompressionStream: CompressionStream,
+    DecompressionStream: DecompressionStream,
+    Response: Response,
+    console: console,
+  });
+  [
+    "app/js/libs/tcoaal-codec.js",
+    "app/js/libs/json-diff.js",
+    "app/js/libs/mod-package.js",
+    "app/js/libs/mod-install.js",
+  ].forEach(function (rel) {
+    vm.runInContext(fs.readFileSync(path.join(ROOT, rel), "utf8"), ctx);
+  });
+  _pkgLibs = ctx.self;
+  return _pkgLibs;
+}
+
+/** The one .tcoaalmod directly in modDir, or null (none, or ambiguous). */
+function findPackageFile(modDir) {
+  var names;
+  try {
+    names = fs.readdirSync(modDir);
+  } catch (e) {
+    return null;
+  }
+  var pkgs = names.filter(function (n) {
+    return /\.tcoaalmod$/i.test(n) && fs.statSync(path.join(modDir, n)).isFile();
+  });
+  if (pkgs.length > 1) {
+    console.warn(
+      "[package] " + modDir + ": more than one .tcoaalmod (" + pkgs.join(", ") +
+        "); keep exactly one",
+    );
+    return null;
+  }
+  return pkgs.length ? pkgs[0] : null;
+}
+
+/**
+ * Read a package's manifest, icon and landing paths without inflating its
+ * payload. Resolves to {manifest, icon, rels} or throws.
+ */
+async function readPackageInfo(file) {
+  var L = pkgLibs();
+  var pkg = await L.ModPackage.open(new Uint8Array(fs.readFileSync(file)));
+  var m = pkg.manifest;
+  if (m.online) throw new Error("it is an online placeholder, not the mod itself");
+  if (!Array.isArray(m.variants) || !m.variants.length) {
+    throw new Error("it has no base variants");
+  }
+  var icon = m.icon && pkg.zip.has(m.icon) ? await pkg.zip.read(m.icon) : null;
+  var seen = {};
+  var rels = [];
+  m.variants.forEach(function (v) {
+    (v.files || []).forEach(function (f) {
+      if (f.type === "delete" || seen[f.rel]) return;
+      seen[f.rel] = true;
+      rels.push(f.rel);
+    });
+  });
+  return { manifest: m, icon: icon, rels: rels };
+}
+
+/** Write the package's icon as <modDir>/icon.png when it differs. */
+function writePackageIcon(modDir, icon) {
+  if (!icon) return false;
+  var out = path.join(modDir, "icon.png");
+  var buf = Buffer.from(icon.buffer, icon.byteOffset, icon.byteLength);
+  if (fs.existsSync(out) && fs.readFileSync(out).equals(buf)) return true;
+  fs.writeFileSync(out, buf);
+  return true;
+}
+
+/**
+ * Fill a packaged mod's catalog entry. What the modder put in the package is
+ * the source for everything the catalog shows about the mod, except fields a
+ * maintainer already curated in mods.json (name, author, description,
+ * langFile), which are kept.
+ */
+async function applyPackageEntry(modId, entry, modDir, pkgName) {
+  var info = await readPackageInfo(path.join(modDir, pkgName));
+  var m = info.manifest;
+  var rel = path.relative(ROOT, modDir).split(path.sep).join("/");
+  var today = new Date().toISOString().substring(0, 10);
+  var version = String(m.version || "");
+
+  if (!entry.name) entry.name = m.name || modId;
+  if (!entry.author) entry.author = m.author || "";
+  if (!entry.description) entry.description = m.description || "";
+  entry.path = rel;
+  entry.type = entry.type && !/plugin/i.test(entry.type) ? entry.type : "overhaul";
+  entry.package = rel + "/" + pkgName;
+  if (entry.version !== version) entry.lastUpdate = today;
+  if (!entry.addedDate) entry.addedDate = today;
+  entry.version = version;
+  if (!entry.langFile) {
+    var lang = pkgLibs().ModInstall.detectLangFile(info.rels);
+    if (lang) entry.langFile = lang;
+  }
+  if (writePackageIcon(modDir, info.icon)) entry.icon = rel + "/icon.png";
+  // A package installs from itself: a file list (or its hashes) left over
+  // from a www/ layout would send the boot repair after files that are not
+  // on the server.
+  delete entry.files;
+  delete entry.hashes;
+  delete entry.drmType;
+  return { files: info.rels.length, variants: m.variants.length };
+}
+
+/**
+ * Folders under mods/ that hold a package but have no mods.json entry yet.
+ * Built-in ("_") folders are the app's own plugins and never packages.
+ */
+function discoverPackagedMods(modsData) {
+  var added = 0;
+  var names;
+  try {
+    names = fs.readdirSync(MODS_DIR);
+  } catch (e) {
+    return 0;
+  }
+  var known = {};
+  Object.keys(modsData).forEach(function (k) {
+    var p = modsData[k] && modsData[k].path;
+    known[k.toLowerCase()] = true;
+    if (typeof p === "string") known[p.replace(/^mods\//, "").toLowerCase()] = true;
+  });
+  names.sort().forEach(function (name) {
+    if (name.charAt(0) === "_" || name.charAt(0) === ".") return;
+    var dir = path.join(MODS_DIR, name);
+    if (!fs.statSync(dir).isDirectory() || known[name.toLowerCase()]) return;
+    if (fs.existsSync(path.join(dir, "www"))) return;
+    if (!findPackageFile(dir)) return;
+    modsData[name] = { path: "mods/" + name, type: "overhaul" };
+    console.log("[package] new mod folder: " + name);
+    added++;
+  });
+  return added;
+}
+
+/** --package-icons <dir>: extract every packaged mod's icon under <dir>. */
+async function extractPackageIcons(dir) {
+  var n = 0;
+  var names = fs.readdirSync(dir);
+  for (var i = 0; i < names.length; i++) {
+    var modDir = path.join(dir, names[i]);
+    if (!fs.statSync(modDir).isDirectory()) continue;
+    var pkgName = findPackageFile(modDir);
+    if (!pkgName) continue;
+    try {
+      var info = await readPackageInfo(path.join(modDir, pkgName));
+      if (writePackageIcon(modDir, info.icon)) n++;
+    } catch (e) {
+      console.warn("[package] " + names[i] + ": " + e.message);
+    }
+  }
+  console.log("[package] " + n + " icon(s) in " + dir);
 }
 
 /** Parse "https://github.com/owner/repo" -> { owner, repo } or null. */
@@ -562,6 +745,28 @@ async function syncExtraMods(modsData) {
     var baseUrl = EXTRAS_BASE + "/" + folder + "/www";
     var localWww = path.join(MODS_DIR, folder, "www");
 
+    // A folder holding one .tcoaalmod instead of a www/ tree is a packaged
+    // extras mod: the host serves the file as it is (extras-host copies every
+    // top-level folder of cal-mods/extras), so the entry names it rather than
+    // listing files. Read from a local copy under mods/<folder>/ like the
+    // www/ layout is; without one, the last-known entry is kept.
+    if (!fs.existsSync(localWww)) {
+      var localPkg = findPackageFile(path.join(MODS_DIR, folder));
+      var knownPkg = modsData[modId] && modsData[modId].package;
+      if (localPkg || knownPkg) {
+        if (
+          await applyExtrasPackage(
+            modsData,
+            folder,
+            localPkg ? path.join(MODS_DIR, folder, localPkg) : null,
+          )
+        ) {
+          count++;
+        }
+        continue;
+      }
+    }
+
     var files = walkDir(localWww, "");
     var existing = modsData[modId] || {};
     if (files.length === 0) {
@@ -637,6 +842,58 @@ async function syncExtraMods(modsData) {
 }
 
 /**
+ * Write the catalog entry of a packaged extras mod (<EXTRAS_BASE>/<folder>/
+ * <name>.tcoaalmod) from the package's own mod.json. Curated fields already in
+ * mods.json (name, author, description, langFile, addedDate, icon) are kept.
+ * The icon is <folder>/icon.png on the host, which extras-host's deploy
+ * extracts out of the package. `pkgFile` null keeps the existing entry (a run
+ * without a local copy). Returns whether an entry was written or kept.
+ */
+async function applyExtrasPackage(modsData, folder, pkgFile) {
+  var existing = modsData[folder] || {};
+  if (!pkgFile) {
+    console.warn(
+      "[extras] " + folder + ": no local mods/" + folder +
+        "/*.tcoaalmod; keeping the existing entry",
+    );
+    return !!existing.package;
+  }
+  var info;
+  try {
+    info = await readPackageInfo(pkgFile);
+  } catch (e) {
+    console.warn("[extras] " + folder + ": cannot read " + pkgFile + ": " + e.message);
+    return false;
+  }
+  var m = info.manifest;
+  var base = EXTRAS_BASE + "/" + folder;
+  var version = String(m.version || "");
+  var today = new Date().toISOString().substring(0, 10);
+  modsData[folder] = {
+    name: existing.name || m.name || folder,
+    addedDate: existing.addedDate || today,
+    icon: existing.icon || (info.icon ? base + "/icon.png" : ""),
+    author: existing.author || m.author || "",
+    lastUpdate:
+      existing.version === version && existing.lastUpdate
+        ? existing.lastUpdate
+        : today,
+    path: base,
+    type: "overhaul",
+    description: existing.description || m.description || "",
+    version: version,
+    package: base + "/" + path.basename(pkgFile),
+  };
+  var lang = existing.langFile || pkgLibs().ModInstall.detectLangFile(info.rels);
+  if (lang) modsData[folder].langFile = lang;
+  console.log(
+    "[extras] " + folder + ": package " + path.basename(pkgFile) +
+      " (v" + version + ", " + info.rels.length + " files)",
+  );
+  return true;
+}
+
+/**
  * Reorder modsData so remote extras overhaul mods sit immediately after the
  * local (built-in + bundled) mods and before the translation mods. JSON object
  * key order is insertion order, and both getModList() (client) and the Mods UI
@@ -692,6 +949,17 @@ async function fetchGithubMeta(repoUrl) {
 }
 
 async function main() {
+  var iconsAt = process.argv.indexOf("--package-icons");
+  if (iconsAt !== -1) {
+    var dir = process.argv[iconsAt + 1];
+    if (!dir) {
+      console.error("Usage: --package-icons <mods dir>");
+      process.exit(2);
+    }
+    await extractPackageIcons(path.resolve(dir));
+    return;
+  }
+
   // Read existing mods.json
   var modsData;
   try {
@@ -714,6 +982,8 @@ async function main() {
   if (extrasCount > 0) {
     console.log("[extras] Updated " + extrasCount + " extras mod entry(ies)");
   }
+
+  discoverPackagedMods(modsData);
 
   var count = 0;
   var keys = Object.keys(modsData);
@@ -763,7 +1033,21 @@ async function main() {
     }
 
     if (!fs.existsSync(wwwDir) || !fs.statSync(wwwDir).isDirectory()) {
-      console.log("[skip] " + modId + ": no www/ directory");
+      var pkgName = findPackageFile(modDir);
+      if (!pkgName) {
+        console.log("[skip] " + modId + ": no www/ directory or .tcoaalmod");
+        continue;
+      }
+      try {
+        var res = await applyPackageEntry(modId, entry, modDir, pkgName);
+        console.log(
+          "[package] " + modId + ": " + pkgName + " (v" + entry.version + ", " +
+            res.files + " files, " + res.variants + " base build(s))",
+        );
+        count++;
+      } catch (e) {
+        console.warn("[package] " + modId + ": cannot read " + pkgName + ": " + e.message);
+      }
       continue;
     }
 

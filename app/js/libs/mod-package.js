@@ -72,6 +72,12 @@
   }
 
   function inflateRaw(bytes) {
+    // The game page already carries pako for the DRM payload, and an older
+    // browser without DecompressionStream("deflate-raw") (Safari before 16.4)
+    // can still open a package through it.
+    if (typeof DecompressionStream === "undefined" && root.pako) {
+      return Promise.resolve(root.pako.inflateRaw(bytes));
+    }
     return pipe(bytes, new DecompressionStream("deflate-raw"));
   }
 
@@ -164,7 +170,13 @@
     return concat(parts.concat(central, [eocd]));
   }
 
-  async function readZip(bytes) {
+  /*
+   * The central directory of a ZIP, with each entry inflated only when it is
+   * asked for. A package can be hundreds of megabytes of which an installer
+   * needs one entry at a time, and inflating all of it up front (readZip)
+   * holds the whole mod in memory twice over.
+   */
+  function openZip(bytes) {
     var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     var eocd = -1;
     for (var i = bytes.length - 22; i >= 0; i--) {
@@ -176,9 +188,11 @@
     if (eocd < 0) throw new Error("Not a ZIP file (no end-of-central-directory).");
     var count = dv.getUint16(eocd + 10, true);
     var p = dv.getUint32(eocd + 16, true);
-    var out = new Map();
+    var index = new Map();
     for (var n = 0; n < count; n++) {
-      if (dv.getUint32(p, true) !== 0x02014b50) throw new Error("Corrupt ZIP central directory.");
+      if (p + 46 > bytes.length || dv.getUint32(p, true) !== 0x02014b50) {
+        throw new Error("Corrupt ZIP central directory.");
+      }
       var method = dv.getUint16(p + 10, true);
       var compSize = dv.getUint32(p + 20, true);
       var nameLen = dv.getUint16(p + 28, true);
@@ -186,18 +200,40 @@
       var commentLen = dv.getUint16(p + 32, true);
       var lho = dv.getUint32(p + 42, true);
       var name = new TextDecoder().decode(bytes.subarray(p + 46, p + 46 + nameLen));
-      // The local header's OWN name/extra lengths locate its data; these
-      // are routinely different from the central directory entry's, and
-      // using the wrong pair yields data offset by a few bytes.
-      var lNameLen = dv.getUint16(lho + 26, true);
-      var lExtraLen = dv.getUint16(lho + 28, true);
-      var start = lho + 30 + lNameLen + lExtraLen;
-      var body = bytes.subarray(start, start + compSize);
-      // .slice() on the stored branch: subarray() would hand back a view
-      // aliasing the caller's buffer, while the deflated branch always
-      // returns an independent copy. Same ownership either way.
-      out.set(name, method === 0 ? body.slice() : await inflateRaw(body));
+      index.set(name, { method: method, compSize: compSize, lho: lho });
       p += 46 + nameLen + extraLen + commentLen;
+    }
+    return {
+      names: function () {
+        return Array.from(index.keys());
+      },
+      has: function (name) {
+        return index.has(name);
+      },
+      read: async function (name) {
+        var e = index.get(name);
+        if (!e) return null;
+        // The local header's OWN name/extra lengths locate its data; these
+        // are routinely different from the central directory entry's, and
+        // using the wrong pair yields data offset by a few bytes.
+        var lNameLen = dv.getUint16(e.lho + 26, true);
+        var lExtraLen = dv.getUint16(e.lho + 28, true);
+        var start = e.lho + 30 + lNameLen + lExtraLen;
+        var body = bytes.subarray(start, start + e.compSize);
+        // .slice() on the stored branch: subarray() would hand back a view
+        // aliasing the caller's buffer, while the deflated branch always
+        // returns an independent copy. Same ownership either way.
+        return e.method === 0 ? body.slice() : await inflateRaw(body);
+      },
+    };
+  }
+
+  async function readZip(bytes) {
+    var zip = openZip(bytes);
+    var out = new Map();
+    var names = zip.names();
+    for (var i = 0; i < names.length; i++) {
+      out.set(names[i], await zip.read(names[i]));
     }
     return out;
   }
@@ -296,8 +332,26 @@
     return { manifest: manifest, entries: entries };
   }
 
+  /*
+   * The manifest and a lazy entry reader, for a caller that walks a package
+   * one file at a time (the browser installer). Same format checks as parse.
+   */
+  async function open(bytes) {
+    var zip = openZip(bytes);
+    var raw = await zip.read("mod.json");
+    if (!raw) throw new Error("Invalid mod file: missing mod.json.");
+    var manifest = JSON.parse(new TextDecoder().decode(raw));
+    if (READABLE.indexOf(manifest.format) === -1) {
+      throw new Error("Unrecognized mod format: " + manifest.format);
+    }
+    return { manifest: manifest, zip: zip };
+  }
+
   root.ModPackage = {
     FORMAT: FORMAT,
+    READABLE: READABLE,
+    openZip: openZip,
+    open: open,
     crc32: crc32,
     writeZip: writeZip,
     readZip: readZip,

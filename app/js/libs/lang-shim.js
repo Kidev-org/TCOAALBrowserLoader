@@ -345,6 +345,12 @@
   // entries and surfaced in the Mods menu (enable / disable / uninstall).
   var IMPORTED_MODS_KEY = "__imported_mods__";
   var _importedMods = {};
+  // The icon a user-added .tcoaalmod carried, as PNG bytes. Kept out of the
+  // registry blob so the registry stays small enough to read on every boot.
+  var MOD_ICON_KEY_PREFIX = "__mod_icon__:";
+  // localStorage: the active user-added mod's language file (see the
+  // __modLangFile setup below).
+  var ACTIVE_MOD_LANG_FILE_KEY = "_activeModLangFile";
 
   // IDB key the SW (and index.html's preloadModsData) write the latest
   // mods.json text to. Mirrored here so a successful sync XHR also tops
@@ -598,12 +604,55 @@
               icon: m.icon || importedModIconUrl(tag),
               imported: true,
               addedDate: m.addedDate || "",
+              lastUpdate: m.lastUpdate || "",
+              langFile: m.langFile || undefined,
               path: "", // already in IDB; nothing to fetch
               files: [],
             };
           });
-          if (cb) cb();
+          loadImportedIcons(db, reg, function () {
+            if (cb) cb();
+          });
         });
+      });
+    });
+  }
+
+  // blob: URLs for the icons user-added .tcoaalmod files carried, keyed by
+  // mod id and remembered with the version they were made for, so reopening
+  // the Mods menu (which re-reads the registry) does not mint a new URL for
+  // the same bytes every time.
+  var _importedIconUrls = {};
+
+  function loadImportedIcons(db, reg, cb) {
+    var tags = Object.keys(reg).filter(function (tag) {
+      return reg[tag] && reg[tag].hasIcon;
+    });
+    var left = tags.length;
+    if (!left) {
+      cb();
+      return;
+    }
+    tags.forEach(function (tag) {
+      var ver = reg[tag].version || "";
+      var cached = _importedIconUrls[tag];
+      if (cached && cached.version === ver) {
+        _modsData[tag].icon = cached.url;
+        if (--left === 0) cb();
+        return;
+      }
+      getAssetMain(db, MOD_ICON_KEY_PREFIX + tag, function (val) {
+        if (val && typeof URL !== "undefined" && URL.createObjectURL) {
+          try {
+            if (cached) URL.revokeObjectURL(cached.url);
+            var url = URL.createObjectURL(
+              val instanceof Blob ? val : new Blob([val], { type: "image/png" }),
+            );
+            _importedIconUrls[tag] = { version: ver, url: url };
+            _modsData[tag].icon = url;
+          } catch (e) {}
+        }
+        if (--left === 0) cb();
       });
     });
   }
@@ -680,7 +729,24 @@
       if (isPluginType(all[i].type)) plugins.push(all[i]);
       else overhauls.push(all[i]);
     }
-    return plugins.concat(overhauls);
+    return plugins.concat(overhauls, [addModFileRow()]);
+  }
+
+  // The last row of the Mods list is not a mod: it opens a file picker for a
+  // .tcoaalmod the user downloaded (importModFile). A row rather than a key
+  // hint so it is reachable by touch and controller as well as keyboard.
+  var ADD_MOD_FILE_KEY = "__add_mod_file__";
+
+  function addModFileRow() {
+    return {
+      key: ADD_MOD_FILE_KEY,
+      action: "addFile",
+      name: "Add a mod file",
+      author: "",
+      description: "Install a .tcoaalmod file you downloaded (or drop one here)",
+      type: "",
+      path: "",
+    };
   }
 
   // Credits scene additions
@@ -1256,6 +1322,14 @@
     if (_activeEntry.type !== MOD_TYPE_TRANSLATION) {
       window.__modLangFile = _activeEntry.langFile || null;
     }
+  } else if (_activeMod) {
+    // A mod the user added from a file is not in mods.json, and the registry
+    // it lives in is read from IndexedDB after this point, too late for the
+    // DRM. setActiveMod leaves its langFile here for exactly this read.
+    try {
+      window.__modLangFile =
+        localStorage.getItem(ACTIVE_MOD_LANG_FILE_KEY) || null;
+    } catch (e) {}
   }
 
   // Patch webStorageKey EARLY (before DRM payload executes) so that
@@ -1280,6 +1354,12 @@
     try {
       if (modId) localStorage.setItem("_activeMod", modId);
       else localStorage.removeItem("_activeMod");
+      var activeEntry = modId ? getModEntry(modId) : null;
+      if (activeEntry && activeEntry.imported && activeEntry.langFile) {
+        localStorage.setItem(ACTIVE_MOD_LANG_FILE_KEY, activeEntry.langFile);
+      } else {
+        localStorage.removeItem(ACTIVE_MOD_LANG_FILE_KEY);
+      }
     } catch (e) {}
     // Keep _activeSaveScope in sync so the DRM-side modAwareKey sees the
     // new translation-aware scope without waiting for a page reload.
@@ -1504,6 +1584,10 @@
   // cache key so a reload after a deploy decodes the new icon.
   function modIconUrl(icon) {
     if (!icon) return icon;
+    // An icon a user-added mod carried in its package is a blob: URL made
+    // from IndexedDB (loadImportedMods): no network copy to refresh, and a
+    // query string would name a different, nonexistent blob.
+    if (/^(blob|data):/i.test(icon)) return icon;
     return icon + (icon.indexOf("?") < 0 ? "?" : "&") + "fresh=1";
   }
 
@@ -2565,6 +2649,11 @@
   }
 
   function installMod(modId, basePath, onProgress, onDone, onError) {
+    var pkgEntry = _modsData && _modsData[modId];
+    if (pkgEntry && pkgEntry.package) {
+      installModFromPackage(modId, pkgEntry, onProgress, onDone, onError);
+      return;
+    }
     if (!basePath) {
       if (onError) onError("No mod path configured");
       return;
@@ -2684,6 +2773,304 @@
     });
   }
 
+  // .tcoaalmod packages
+  //
+  // Two ways a packaged mod reaches the Mods menu: a catalog entry whose
+  // mods.json record names a `package` (a third-party mod published as one
+  // .tcoaalmod under mods/<id>/), and a file the user adds themselves. Both
+  // go through ModInstall (mod-install.js), which lays the package down over
+  // the imported game under the same "mod:{id}:" keys a file-by-file install
+  // writes, so the service worker, the save scope and the rest of the menu
+  // treat the result like any other overhaul.
+
+  var MOD_INSTALL_LIBS = [
+    "js/libs/tcoaal-codec.js",
+    "js/libs/json-diff.js",
+    "js/libs/mod-package.js",
+    "js/libs/mod-install.js",
+  ];
+  var _modInstallLibsPromise = null;
+
+  // The installer and the three libraries under it, loaded the first time a
+  // package is installed: most sessions never need them.
+  function ensureModInstallLibs() {
+    if (window.ModInstall) return Promise.resolve();
+    if (_modInstallLibsPromise) return _modInstallLibsPromise;
+    _modInstallLibsPromise = MOD_INSTALL_LIBS.reduce(function (chain, src) {
+      return chain.then(function () {
+        return new Promise(function (resolve, reject) {
+          var el = document.createElement("script");
+          el.src = src;
+          el.onload = resolve;
+          el.onerror = function () {
+            reject(new Error("Could not load " + src));
+          };
+          document.body.appendChild(el);
+        });
+      });
+    }, Promise.resolve());
+    _modInstallLibsPromise.catch(function () {
+      _modInstallLibsPromise = null; // let a later attempt retry
+    });
+    return _modInstallLibsPromise;
+  }
+
+  function openAssetsDbP() {
+    return new Promise(function (resolve, reject) {
+      openAssetsDb(function (db) {
+        if (db) resolve(db);
+        else reject(new Error("Cannot open IndexedDB"));
+      });
+    });
+  }
+
+  function putAssetP(db, key, value) {
+    return new Promise(function (resolve, reject) {
+      putAsset(db, key, value, function (err) {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  function deleteAssetP(db, key) {
+    return new Promise(function (resolve) {
+      deleteAsset(db, key, resolve);
+    });
+  }
+
+  // Everything after the files are down: the meta that marks the mod
+  // installed, and the language cache the service worker merges into
+  // /lang-data.json (dropped first so a reinstall never serves the previous
+  // version's text).
+  //
+  // `langData` is what ModInstall found by content (the parsed language
+  // file's JSON text) and is stored as the cache as it stands. Without it
+  // (a translator-format .csv/.txt, which only its own parser reads) the
+  // cache is extracted by name, as a file-by-file install does.
+  function finishPackageInstall(db, modId, meta, langEntry, langData) {
+    return putAssetP(db, "__mod_meta__:" + modId, JSON.stringify(meta))
+      .then(function () {
+        return deleteAssetP(db, "__mod_lang_data__:" + modId);
+      })
+      .then(function () {
+        if (langData) {
+          return putAssetP(db, "__mod_lang_data__:" + modId, langData);
+        }
+        return new Promise(function (resolve) {
+          extractModLangData(db, modId, langEntry, resolve);
+        });
+      })
+      .then(function () {
+        if (!langData && !(langEntry && langEntry.langFile)) {
+          // Not an error (a mod may keep the game's dialogue as it is), but
+          // the first thing to check when its lines show as raw keys.
+          console.warn(
+            "[lang-shim] " + modId + " ships no language file; it runs on " +
+              "the base game's dialogue",
+          );
+        }
+      });
+  }
+
+  // Map ModInstall's 0..1 onto the menu row's percentage.
+  function packageProgress(onProgress, from, to) {
+    return function (frac, message) {
+      var pct = Math.floor(from + (to - from) * Math.max(0, Math.min(1, frac)));
+      onProgress({ percent: pct, message: message || "Installing... " + pct + "%" });
+    };
+  }
+
+  function installModFromPackage(modId, entry, onProgress, onDone, onError) {
+    var version = entry.version || "";
+    // ?v= per version: a republished package keeps its URL, and a cached
+    // response for it would install the previous release.
+    var url =
+      (isRemotePath(entry.package)
+        ? entry.package
+        : "/" + String(entry.package).replace(/^\/+/, "")) +
+      (version ? "?v=" + encodeURIComponent(version) : "");
+    var db;
+    onProgress({ percent: 0, message: "Downloading..." });
+    ensureModInstallLibs()
+      .then(openAssetsDbP)
+      .then(function (d) {
+        db = d;
+        return window.ModInstall.fetchBytes(
+          fetch.bind(window),
+          url,
+          null,
+          function (got, total) {
+            if (!total) return;
+            var pct = Math.floor((got / total) * 60);
+            onProgress({ percent: pct, message: "Downloading... " + pct + "%" });
+          },
+        );
+      })
+      .then(function (bytes) {
+        return window.ModInstall.install({
+          store: window.ModInstall.idbStore(db, ASSETS_STORE),
+          bytes: bytes,
+          id: modId,
+          fetch: fetch.bind(window),
+          onProgress: packageProgress(onProgress, 60, 98),
+        });
+      })
+      .then(function (r) {
+        // What the package holds wins over the catalog's guess from names.
+        var langFile = r.langFile || entry.langFile;
+        return finishPackageInstall(
+          db,
+          modId,
+          {
+            version: version,
+            date: new Date().toISOString().substring(0, 10),
+            files: r.files.length,
+            package: true,
+            langParseVersion: LANG_PARSE_VERSION,
+          },
+          { langFile: langFile, files: r.files },
+          r.langData,
+        );
+      })
+      .then(function () {
+        resetSwGameCaches();
+        onProgress({ percent: 100, message: "Installed!" });
+        _modStatus[modId] = { installed: true, version: version };
+        if (onDone) onDone({ version: version });
+      })
+      .catch(function (e) {
+        console.warn("[lang-shim] package install failed:", modId, e);
+        if (onError) onError(shortInstallError(e));
+      });
+  }
+
+  // The worker's derived caches (case-insensitive key index, assembled DRM
+  // payload) describe the files as they were; a package install just changed
+  // them. Fire-and-forget: the caches rebuild on the next request.
+  function resetSwGameCaches() {
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: "resetGameCaches",
+        });
+      }
+    } catch (e) {}
+  }
+
+  // The menu row has room for a few words; the console keeps the rest.
+  function shortInstallError(e) {
+    var msg = String((e && e.message) || e || "Install failed");
+    if (/fetch|network|HTTP|Failed to/i.test(msg)) return "Check your connection";
+    if (/does not support your version/.test(msg)) return "Not for your game version";
+    if (/storage space/.test(msg)) return "Not enough storage space";
+    return msg.length > 40 ? msg.substring(0, 37) + "..." : msg;
+  }
+
+  /**
+   * Install a .tcoaalmod the user picked or dropped. The mod joins the
+   * __imported_mods__ registry (the same one loadImportedMods merges into the
+   * Mods menu), keyed by the package's own id, so adding a newer version of
+   * a mod already added updates it in place. A package whose id is a catalog
+   * mod's is refused: the catalog copy is the one to install, and two mods
+   * under one key (IndexedDB lookups here are case-insensitive) would share
+   * files and saves.
+   *
+   * Resolves to {id, name, version, updated}; rejects with a player-facing
+   * Error.
+   */
+  function importModFile(bytes, onProgress) {
+    var progress = onProgress || function () {};
+    var db, peek, r;
+    return ensureModInstallLibs()
+      .then(openAssetsDbP)
+      .then(function (d) {
+        db = d;
+        return window.ModPackage.open(bytes).catch(function (e) {
+          console.warn("[lang-shim] not a mod package:", e);
+          throw new Error("That file is not a .tcoaalmod mod.");
+        });
+      })
+      .then(function (p) {
+        peek = p.manifest;
+        var id = String(peek.id || "");
+        if (!window.ModInstall.safeId(id) || /^translation_/i.test(id)) {
+          throw new Error('The mod file has an invalid id ("' + id + '").');
+        }
+        var lower = id.toLowerCase();
+        var keys = _modsData ? Object.keys(_modsData) : [];
+        for (var i = 0; i < keys.length; i++) {
+          var other = _modsData[keys[i]];
+          if (keys[i].toLowerCase() !== lower) continue;
+          if (other && other.imported && keys[i] === id) continue;
+          throw new Error(
+            (other && other.name ? other.name : keys[i]) +
+              " is already in the Mods list. Install it from there.",
+          );
+        }
+        return window.ModInstall.install({
+          store: window.ModInstall.idbStore(db, ASSETS_STORE),
+          bytes: bytes,
+          fetch: fetch.bind(window),
+          onProgress: packageProgress(function (d) {
+            progress(d.percent, d.message);
+          }, 0, 97),
+        });
+      })
+      .then(function (res) {
+        r = res;
+        return r.icon
+          ? putAssetP(db, MOD_ICON_KEY_PREFIX + r.id, r.icon.slice().buffer)
+          : deleteAssetP(db, MOD_ICON_KEY_PREFIX + r.id);
+      })
+      .then(function () {
+        var m = r.manifest;
+        var today = new Date().toISOString().substring(0, 10);
+        var prev = _importedMods[r.id] || {};
+        var record = {
+          name: m.name || r.id,
+          author: m.author || "",
+          version: m.version || "",
+          description: m.description || "",
+          type: MOD_TYPE_OVERHAUL,
+          imported: true,
+          source: "file",
+          addedDate: prev.addedDate || today,
+          lastUpdate: today,
+          hasIcon: !!r.icon,
+        };
+        if (r.langFile) record.langFile = r.langFile;
+        if (m.update) record.update = m.update;
+        _importedMods[r.id] = record;
+        return putAssetP(db, IMPORTED_MODS_KEY, JSON.stringify(_importedMods))
+          .then(function () {
+            var meta = {};
+            for (var k in record) meta[k] = record[k];
+            meta.date = today;
+            meta.files = r.files.length;
+            meta.langParseVersion = LANG_PARSE_VERSION;
+            return finishPackageInstall(
+              db,
+              r.id,
+              meta,
+              { langFile: r.langFile, files: r.files },
+              r.langData,
+            );
+          })
+          .then(function () {
+            resetSwGameCaches();
+            _modStatus[r.id] = { installed: true, version: record.version };
+            progress(100, "Installed!");
+            return {
+              id: r.id,
+              name: record.name,
+              version: record.version,
+              updated: !!prev.name,
+            };
+          });
+      });
+  }
+
   function uninstallMod(modId, callback) {
     openAssetsDb(function (db) {
       if (!db) {
@@ -2700,6 +3087,14 @@
           if (_importedMods && _importedMods[modId]) {
             delete _importedMods[modId];
             if (_modsData) delete _modsData[modId];
+            deleteAsset(db, MOD_ICON_KEY_PREFIX + modId);
+            deleteAsset(db, "__mod_lang_data__:" + modId);
+            if (_importedIconUrls[modId]) {
+              try {
+                URL.revokeObjectURL(_importedIconUrls[modId].url);
+              } catch (e) {}
+              delete _importedIconUrls[modId];
+            }
             putAsset(
               db,
               IMPORTED_MODS_KEY,
@@ -6034,6 +6429,7 @@
         self._modsMouseY = Graphics.pageToCanvasY(e.pageY);
       };
       document.addEventListener("mousemove", this._modsMouseHandler);
+      this._bindModFileDrop();
       // The offline indicator (defined in app/index.html) is gated by this
       // body class so it only shows in the Mods menu: the one place where
       // network state actually changes what the user can do (install).
@@ -6070,6 +6466,7 @@
     };
 
     Scene_Mods.prototype.terminate = function () {
+      this._unbindModFileDrop();
       if (this._modsMouseHandler) {
         document.removeEventListener("mousemove", this._modsMouseHandler);
         this._modsMouseHandler = null;
@@ -6151,7 +6548,7 @@
 
     Scene_Mods.prototype._handleDelete = function (sourceWin) {
       var mod = sourceWin.selectedMod && sourceWin.selectedMod();
-      if (!mod) return;
+      if (!mod || mod.action) return;
       if (isBuiltIn(mod) && isPluginType(mod.type)) {
         // Built-in plugin: Del disables instead of uninstalling, since the
         // files are shipped with the app and can't actually be removed.
@@ -6259,7 +6656,19 @@
     // on from the menu (e.g. trying to install a remote mod while offline)
     // without a confirmation choice.
     Scene_Mods.prototype._showInfo = function (message, sourceWin) {
-      this._pendingAction = null;
+      this._openInfoPopup(message, sourceWin, null);
+      SoundManager.playBuzzer();
+    };
+
+    // Single-OK popup for good news. `action`, when given, runs on OK
+    // through onConfirmYes like a confirmed choice.
+    Scene_Mods.prototype._showNotice = function (message, action) {
+      this._openInfoPopup(message, null, action || null);
+      SoundManager.playOk();
+    };
+
+    Scene_Mods.prototype._openInfoPopup = function (message, sourceWin, action) {
+      this._pendingAction = action ? { type: action, mod: null } : null;
       this._confirmSource = sourceWin || this._listWindow;
       if (this._listWindow) this._listWindow.deactivate();
       if (this._activeModWindow) this._activeModWindow.deactivate();
@@ -6268,13 +6677,145 @@
       this._confirmWindow.show();
       this._confirmWindow.activate();
       this._confirmWindow.select(0);
-      SoundManager.playBuzzer();
+    };
+
+    // Adding a mod from a file
+
+    // One hidden <input type=file>, reused. Opened from the game loop rather
+    // than from inside the click/keydown handler, which browsers allow while
+    // the gesture's transient activation lasts (a few seconds), and the
+    // gesture that selected the row is always that recent.
+    var _modFileInput = null;
+
+    Scene_Mods.prototype._pickModFile = function () {
+      var self = this;
+      if (_modStatus[ADD_MOD_FILE_KEY] && _modStatus[ADD_MOD_FILE_KEY]._downloading) {
+        this._listWindow.activate();
+        return;
+      }
+      if (!_modFileInput) {
+        _modFileInput = document.createElement("input");
+        _modFileInput.type = "file";
+        // Android's WebView turns accept into an intent MIME filter, and
+        // ".tcoaalmod" is not a MIME type: every file would be greyed out.
+        // The contents are checked either way.
+        if (!_isAndroidApp) _modFileInput.accept = ".tcoaalmod";
+        _modFileInput.style.display = "none";
+        document.body.appendChild(_modFileInput);
+      }
+      _modFileInput.value = "";
+      _modFileInput.onchange = function () {
+        var f = _modFileInput.files && _modFileInput.files[0];
+        var scene = SceneManager._scene;
+        if (f && scene instanceof window.Scene_Mods) scene._importModFile(f);
+      };
+      SoundManager.playOk();
+      try {
+        _modFileInput.click();
+      } catch (e) {}
+      self._listWindow.activate();
+    };
+
+    Scene_Mods.prototype._importModFile = function (file) {
+      var self = this;
+      var st = (_modStatus[ADD_MOD_FILE_KEY] = _modStatus[ADD_MOD_FILE_KEY] || {});
+      if (st._downloading) return;
+      st._downloading = true;
+      st._percent = 0;
+      st._percentShown = 0;
+      st._progress = "Reading " + file.name + "...";
+      refreshModsListUI();
+
+      function settle() {
+        st._downloading = false;
+        st._percent = 0;
+        st._percentShown = 0;
+        refreshModsListUI();
+      }
+
+      file
+        .arrayBuffer()
+        .then(function (buf) {
+          return importModFile(new Uint8Array(buf), function (pct, message) {
+            st._percent = pct;
+            st._progress = message || "Installing... " + pct + "%";
+            refreshModsListUI();
+          });
+        })
+        .then(function (res) {
+          settle();
+          loadImportedMods(function () {
+            var scene = SceneManager._scene;
+            if (!(scene instanceof window.Scene_Mods)) return;
+            if (scene._listWindow && scene._listWindow.rebuild) {
+              scene._listWindow.rebuild();
+              scene._listWindow.selectModKey(res.id);
+            }
+            fetchAllModStatus(refreshModsListUI);
+            // The active mod's files changed under a running game: its
+            // scripts, maps and language data are already loaded, and the
+            // service worker caches what it has resolved. Only a restart
+            // serves the new version.
+            if (res.updated && getActiveMod() === res.id) {
+              scene._showNotice(
+                res.name + " was updated to " + res.version +
+                  ". The game restarts to load it.",
+                "restart",
+              );
+            } else {
+              scene._showNotice(
+                res.name + (res.updated ? " was updated." : " was added.") +
+                  (getActiveMod() === res.id ? "" : " Select it to enable it."),
+              );
+            }
+          });
+        })
+        .catch(function (e) {
+          settle();
+          console.warn("[lang-shim] adding a mod file failed:", e);
+          var scene = SceneManager._scene;
+          if (scene instanceof window.Scene_Mods) {
+            scene._showInfo(String((e && e.message) || e));
+          }
+        });
+    };
+
+    // Dropping a .tcoaalmod anywhere on the page while the Mods menu is open
+    // installs it, the same as picking it through the row.
+    Scene_Mods.prototype._bindModFileDrop = function () {
+      var self = this;
+      this._modDragOver = function (e) {
+        if (!e.dataTransfer || !e.dataTransfer.types) return;
+        if (Array.prototype.indexOf.call(e.dataTransfer.types, "Files") < 0) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      };
+      this._modDrop = function (e) {
+        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!f) return;
+        e.preventDefault();
+        self._importModFile(f);
+      };
+      document.addEventListener("dragover", this._modDragOver);
+      document.addEventListener("drop", this._modDrop);
+    };
+
+    Scene_Mods.prototype._unbindModFileDrop = function () {
+      if (this._modDragOver) {
+        document.removeEventListener("dragover", this._modDragOver);
+        document.removeEventListener("drop", this._modDrop);
+        this._modDragOver = this._modDrop = null;
+      }
     };
 
     Scene_Mods.prototype.onModOk = function () {
       var mod = this._listWindow.selectedMod();
       if (!mod) {
         this._listWindow.activate();
+        return;
+      }
+      if (mod.action === "addFile") {
+        this._pickModFile();
         return;
       }
 
@@ -6517,6 +7058,11 @@
           location.reload();
           break;
 
+        case "restart":
+          AudioManager.stopAll();
+          location.reload();
+          break;
+
         case "uninstall":
           var wasActive = getActiveMod() === mod.key;
           var wasPlugin = isPluginActive(mod.key);
@@ -6562,17 +7108,49 @@
       this.openness = 255;
     };
 
+    // The message, word-wrapped to the widest popup the screen allows. Most
+    // prompts are one short line; an install error ("... does not support
+    // your version of the game. It was built for: ...") is not, and drawn on
+    // one line it was squeezed into an unreadable smear.
+    Window_ModConfirm.prototype._messageLines = function () {
+      var msg = this._message || "";
+      if (!msg) return [];
+      var chrome = this.standardPadding() * 2 + 24;
+      var maxW = Graphics.boxWidth - 40 - chrome;
+      var out = [];
+      var self = this;
+      msg.split("\n").forEach(function (para) {
+        var line = "";
+        para.split(" ").forEach(function (word) {
+          var next = line ? line + " " + word : word;
+          if (line && self.textWidth(next) > maxW) {
+            out.push(line);
+            line = word;
+          } else {
+            line = next;
+          }
+        });
+        out.push(line);
+      });
+      return out;
+    };
+
     Window_ModConfirm.prototype.windowWidth = function () {
-      if (this._message) {
-        var textW =
-          this.textWidth(this._message) + this.standardPadding() * 2 + 24;
+      var lines = this._messageLines();
+      if (lines.length) {
+        var widest = 0;
+        for (var i = 0; i < lines.length; i++) {
+          widest = Math.max(widest, this.textWidth(lines[i]));
+        }
+        var textW = widest + this.standardPadding() * 2 + 24;
         return Math.max(360, Math.min(textW, Graphics.boxWidth - 40));
       }
       return 360;
     };
     Window_ModConfirm.prototype.windowHeight = function () {
-      // One line for the message + one line per command (Yes/No -> 2, OK -> 1)
-      return this.fittingHeight(this._infoMode ? 2 : 3);
+      // The message's lines + one line per command (Yes/No -> 2, OK -> 1)
+      var lines = Math.max(1, this._messageLines().length);
+      return this.fittingHeight(lines + (this._infoMode ? 1 : 2));
     };
 
     Window_ModConfirm.prototype.updatePlacement = function () {
@@ -6597,6 +7175,7 @@
     Window_ModConfirm.prototype.setMessage = function (msg) {
       this._message = msg;
       this.width = this.windowWidth();
+      this.height = this.windowHeight();
       this.updatePlacement();
       this.createContents();
       this.refresh();
@@ -6613,14 +7192,21 @@
 
     Window_ModConfirm.prototype.refresh = function () {
       Window_Command.prototype.refresh.call(this);
-      if (this._message) {
-        this.drawText(this._message, 0, 0, this.contentsWidth(), "center");
+      var lines = this._messageLines();
+      for (var i = 0; i < lines.length; i++) {
+        this.drawText(
+          lines[i],
+          0,
+          i * this.lineHeight(),
+          this.contentsWidth(),
+          "center",
+        );
       }
     };
 
     Window_ModConfirm.prototype.itemRect = function (index) {
       var rect = Window_Command.prototype.itemRect.call(this, index);
-      rect.y += this.lineHeight();
+      rect.y += Math.max(1, this._messageLines().length) * this.lineHeight();
       return rect;
     };
 
@@ -6634,7 +7220,12 @@
     // none. Each entry is { key, url }; the English flag is the bundled
     // app/img/en.png.
     function getModFlagList(mod) {
-      if (!mod || isPluginType(mod.type) || isTranslationType(mod.type)) {
+      if (
+        !mod ||
+        mod.action ||
+        isPluginType(mod.type) ||
+        isTranslationType(mod.type)
+      ) {
         return [];
       }
       var list = [{ key: "__english__", url: "img/en.png" }];
@@ -6688,6 +7279,46 @@
       }
     }
 
+    // The blue left-to-right fill a row draws while its install runs (see
+    // drawModRow). Shared with the "Add a mod file" row, whose import reports
+    // progress the same way.
+    function drawRowProgress(win, mod, rect) {
+      var dlSt = _modStatus[mod.key];
+      if (dlSt && dlSt._downloading) {
+        var pctRaw =
+          typeof dlSt._percentShown === "number"
+            ? dlSt._percentShown
+            : typeof dlSt._percent === "number"
+              ? dlSt._percent
+              : 0;
+        var pct = Math.max(0, Math.min(100, pctRaw));
+        // Span the full row width, not the text-inset rect: the grey base is
+        // painted across the whole itemRect, so starting the fill at rect.x
+        // (inset by textPadding) would leave a thin grey strip clinging to the
+        // far-left edge. Outset by textPadding to line the two up exactly.
+        var tp = win.textPadding ? win.textPadding() : 0;
+        var rowX = rect.x - tp;
+        var rowW = rect.width + tp * 2;
+        var fillW = Math.floor((rowW * pct) / 100);
+        if (fillW > 0) {
+          win.contents.fillRect(
+            rowX,
+            rect.y,
+            fillW,
+            rect.height,
+            "rgba(120,210,255,0.24)",
+          );
+          win.contents.fillRect(
+            rowX,
+            rect.y + rect.height - 3,
+            fillW,
+            3,
+            "rgba(120,210,255,0.6)",
+          );
+        }
+      }
+    }
+
     // Shared per-row renderer for Window_ModList and Window_ModActive so
     // both surfaces display a mod with the exact same layout. The right column
     // reads top-to-bottom: a single status label (line 1), then the last-update
@@ -6729,40 +7360,7 @@
       // _percentShown is eased toward the real _percent by the list window's
       // update loop, so the fill glides smoothly between the coarse steps
       // installMod reports. Drawn under the icon and text.
-      var dlSt = _modStatus[mod.key];
-      if (dlSt && dlSt._downloading) {
-        var pctRaw =
-          typeof dlSt._percentShown === "number"
-            ? dlSt._percentShown
-            : typeof dlSt._percent === "number"
-              ? dlSt._percent
-              : 0;
-        var pct = Math.max(0, Math.min(100, pctRaw));
-        // Span the full row width, not the text-inset rect: the grey base is
-        // painted across the whole itemRect, so starting the fill at rect.x
-        // (inset by textPadding) would leave a thin grey strip clinging to the
-        // far-left edge. Outset by textPadding to line the two up exactly.
-        var tp = win.textPadding ? win.textPadding() : 0;
-        var rowX = rect.x - tp;
-        var rowW = rect.width + tp * 2;
-        var fillW = Math.floor((rowW * pct) / 100);
-        if (fillW > 0) {
-          win.contents.fillRect(
-            rowX,
-            rect.y,
-            fillW,
-            rect.height,
-            "rgba(120,210,255,0.24)",
-          );
-          win.contents.fillRect(
-            rowX,
-            rect.y + rect.height - 3,
-            fillW,
-            3,
-            "rgba(120,210,255,0.6)",
-          );
-        }
-      }
+      drawRowProgress(win, mod, rect);
 
       var iconBmp = iconCache && iconCache[mod.key];
       var src =
@@ -6969,6 +7567,53 @@
       win.resetTextColor();
     }
 
+    // The "Add a mod file" row: a plus in the icon column, the label, and
+    // either its hint or the running import's progress on the line below.
+    function drawAddFileRow(win, mod, rect) {
+      drawRowProgress(win, mod, rect);
+      var pad = rect.x;
+      var lineHeight = win.lineHeight();
+      var iconH = rect.height - pad * 2;
+      var iconW = Math.floor((iconH * 16) / 9);
+      var textX = rect.x + iconW + 8;
+      var availW = rect.width - (textX - rect.x);
+
+      var boxH = Math.floor(iconH * 0.8);
+      var boxW = Math.floor(boxH * 1.4);
+      var bx = rect.x + Math.floor((iconW - boxW) / 2);
+      var by = rect.y + pad + Math.floor((iconH - boxH) / 2);
+      var line = "rgba(255,255,255,0.35)";
+      win.contents.fillRect(bx, by, boxW, 2, line);
+      win.contents.fillRect(bx, by + boxH - 2, boxW, 2, line);
+      win.contents.fillRect(bx, by, 2, boxH, line);
+      win.contents.fillRect(bx + boxW - 2, by, 2, boxH, line);
+      var arm = Math.floor(boxH * 0.28);
+      var cx = bx + Math.floor(boxW / 2);
+      var cy = by + Math.floor(boxH / 2);
+      win.contents.fillRect(cx - arm, cy - 2, arm * 2, 4, "#aaaacc");
+      win.contents.fillRect(cx - 2, cy - arm, 4, arm * 2, "#aaaacc");
+
+      win.resetTextColor();
+      win.drawText(mod.name, textX, rect.y, availW);
+
+      var st = _modStatus[mod.key];
+      win.contents.fontSize = 16;
+      if (st && st._downloading) {
+        win.contents.textColor = "#ffff88";
+        win.drawText(
+          st._progress || "Installing...",
+          textX,
+          rect.y + lineHeight + 2,
+          availW,
+        );
+      } else {
+        win.contents.textColor = "#cccccc";
+        win.drawText(mod.description, textX, rect.y + lineHeight + 2, availW);
+      }
+      win.contents.fontSize = win.standardFontSize();
+      win.resetTextColor();
+    }
+
     // Window_ModActive: dedicated framed rectangle showing the active
     // overhaul/translation mod above the main list. It's a real
     // Window_Selectable with a single item so the engine handles hover,
@@ -7153,6 +7798,16 @@
       }
     };
 
+    // Put the cursor on a mod by key (a freshly added one), when it is listed.
+    Window_ModList.prototype.selectModKey = function (key) {
+      for (var i = 0; i < this._mods.length; i++) {
+        if (this._mods[i].key === key) {
+          this.select(i);
+          return;
+        }
+      }
+    };
+
     Window_ModList.prototype._loadIcons = function () {
       var self = this;
       for (var i = 0; i < this._mods.length; i++) {
@@ -7209,6 +7864,10 @@
       if (!mod) return;
 
       var rect = this.itemRectForText(index);
+      if (mod.action) {
+        drawAddFileRow(this, mod, rect);
+        return;
+      }
 
       var isActive = isPluginType(mod.type)
         ? isPluginActive(mod.key)
