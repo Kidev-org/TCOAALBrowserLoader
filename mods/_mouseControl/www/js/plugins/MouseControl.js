@@ -179,10 +179,26 @@
     );
   }
 
+  // The swipe that opens the backlog is handled in a touchend listener, i.e.
+  // between frames, so it can land while the current scene is still loading
+  // (every return from the menu builds a fresh Scene_Map that fetches its map
+  // before creating any window). SceneManager.push then runs Scene_Map.stop
+  // on a scene with no _mapNameWindow ("reading 'close'", uncaught) and the
+  // next frame's terminate on one with no _spriteset ("reading 'update'").
+  // Only a started, active scene with no change pending takes the gesture.
+  function sceneAcceptsGesture(scene) {
+    return (
+      !!scene &&
+      SceneManager._sceneStarted &&
+      !SceneManager.isSceneChanging() &&
+      (typeof scene.isActive !== "function" || scene.isActive())
+    );
+  }
+
   function openMessageBacklog() {
     if (!isMessageBacklogReady()) return false;
     var scene = SceneManager._scene;
-    if (!scene) return false;
+    if (!sceneAcceptsGesture(scene)) return false;
     // Inside an active message: route through the existing per-window opener
     // so the message resumes correctly on close.
     if (scene._messageWindow) {

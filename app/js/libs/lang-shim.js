@@ -2125,110 +2125,196 @@
     } catch (e) {}
   }
 
-  function loadPluginMod(pluginId, callback) {
-    var modEntry = _modsData && _modsData[pluginId];
-    var allFiles = modEntry && modEntry.files;
-    if (!allFiles) {
-      if (callback) callback();
-      return;
-    }
+  // How long one plugin file may take to arrive before it is given up on.
+  // Boot waits for the active plugins (see pluginsReadyForBoot), so a request
+  // that never answers must not hold the game on a black screen.
+  var PLUGIN_FETCH_TIMEOUT_MS = 15000;
 
+  function pluginScriptFiles(pluginId) {
+    var modEntry = _modsData && _modsData[pluginId];
+    var allFiles = (modEntry && modEntry.files) || [];
     var jsFiles = [];
     for (var i = 0; i < allFiles.length; i++) {
       if (/^js\/plugins\/.*\.js$/i.test(allFiles[i])) {
         jsFiles.push(allFiles[i]);
       }
     }
-    if (jsFiles.length === 0) {
-      if (callback) callback();
+    return jsFiles;
+  }
+
+  function execPluginScript(text) {
+    try {
+      var script = document.createElement("script");
+      script.type = "text/javascript";
+      script.textContent = text;
+      document.body.appendChild(script);
+    } catch (ex) {
+      console.warn("[lang-shim] Failed to exec plugin script:", ex);
+    }
+  }
+
+  /**
+   * Read the source of every script a plugin mod ships, in parallel. Calls
+   * back with an array aligned with pluginScriptFiles(pluginId): the text, or
+   * null for a file that could not be read. Nothing is executed here.
+   */
+  function fetchPluginScripts(pluginId, callback) {
+    var modEntry = _modsData && _modsData[pluginId];
+    var jsFiles = pluginScriptFiles(pluginId);
+    var texts = new Array(jsFiles.length);
+    var remaining = jsFiles.length;
+    if (remaining === 0) {
+      callback(texts);
       return;
     }
 
     var basePath = modEntry.path || "mods/" + pluginId;
-    var remaining = jsFiles.length;
-
-    function done() {
-      remaining--;
-      if (remaining <= 0 && callback) callback();
-    }
-
-    function execScript(text) {
-      try {
-        var script = document.createElement("script");
-        script.type = "text/javascript";
-        script.textContent = text;
-        document.body.appendChild(script);
-      } catch (ex) {
-        console.warn("[lang-shim] Failed to exec plugin script:", ex);
-      }
-    }
-
     // Built-in plugins (path starts with "mods/_") are shipped with the app
-    // and should always be fetched from the network so updates take effect
-    // without requiring the user to erase and reinstall.
+    // and are read from the network first so updates take effect without
+    // requiring the user to erase and reinstall. The "?fresh=" marker is what
+    // makes that true: the service worker otherwise answers /mods/{id}/www/*
+    // from the installed IDB copy, which the boot repair only refreshes when
+    // the catalog version moves. The installed copy stays the fallback.
     var builtIn = basePath.indexOf("mods/_") === 0;
 
-    for (var j = 0; j < jsFiles.length; j++) {
-      (function (relPath) {
-        var idbKey = "mod:" + pluginId + ":" + relPath;
-
-        function fetchFromNetwork() {
-          var url = "/" + basePath + "/www/" + relPath;
-          var xhr = new XMLHttpRequest();
-          xhr.open("GET", url, true);
-          xhr.onload = function () {
-            if (xhr.status >= 200 && xhr.status < 400) {
-              execScript(xhr.responseText);
-            }
-            done();
-          };
-          xhr.onerror = function () {
-            done();
-          };
-          xhr.send();
+    jsFiles.forEach(function (relPath, idx) {
+      var settled = false;
+      function settle(text) {
+        if (settled) return;
+        settled = true;
+        texts[idx] = text || null;
+        if (!text) {
+          console.warn("[lang-shim] Plugin script unavailable:", pluginId, relPath);
         }
+        if (--remaining === 0) callback(texts);
+      }
 
-        if (builtIn) {
-          fetchFromNetwork();
-          return;
-        }
+      function fetchFromNetwork(onMiss) {
+        var xhr = new XMLHttpRequest();
+        xhr.open(
+          "GET",
+          "/" + basePath + "/www/" + relPath + (builtIn ? "?fresh=1" : ""),
+          true,
+        );
+        xhr.timeout = PLUGIN_FETCH_TIMEOUT_MS;
+        xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 400) settle(xhr.responseText);
+          else onMiss();
+        };
+        xhr.onerror = xhr.ontimeout = xhr.onabort = function () {
+          onMiss();
+        };
+        xhr.send();
+      }
 
+      function readInstalled(onMiss) {
         openAssetsDb(function (db) {
           if (!db) {
-            fetchFromNetwork();
+            onMiss();
             return;
           }
-          getAssetMain(db, idbKey, function (data) {
-            if (data) {
-              var text =
-                typeof data === "string"
-                  ? data
-                  : new TextDecoder().decode(
-                      data instanceof ArrayBuffer ? new Uint8Array(data) : data,
-                    );
-              execScript(text);
-              done();
-            } else {
-              fetchFromNetwork();
+          getAssetMain(db, "mod:" + pluginId + ":" + relPath, function (data) {
+            if (!data) {
+              onMiss();
+              return;
             }
+            settle(
+              typeof data === "string"
+                ? data
+                : new TextDecoder().decode(
+                    data instanceof ArrayBuffer ? new Uint8Array(data) : data,
+                  ),
+            );
           });
         });
-      })(jsFiles[j]);
+      }
+
+      function giveUp() {
+        settle(null);
+      }
+
+      if (builtIn) {
+        fetchFromNetwork(function () {
+          readInstalled(giveUp);
+        });
+      } else {
+        readInstalled(function () {
+          fetchFromNetwork(giveUp);
+        });
+      }
+    });
+  }
+
+  // Scripts run in the order the mod lists them, whatever order they arrive
+  // in: a later file may build on what an earlier one defines.
+  function execPluginScripts(texts) {
+    for (var i = 0; i < texts.length; i++) {
+      if (texts[i]) execPluginScript(texts[i]);
     }
   }
 
-  function loadActivePlugins() {
+  function loadPluginMod(pluginId, callback) {
+    fetchPluginScripts(pluginId, function (texts) {
+      execPluginScripts(texts);
+      if (callback) callback();
+    });
+  }
+
+  /**
+   * Load every active plugin mod: all files are fetched at once, then run
+   * plugin by plugin in _activePlugins order. Calls back once all have run.
+   */
+  function loadActivePlugins(callback) {
+    var ids = [];
     for (var i = 0; i < _activePlugins.length; i++) {
-      var pid = _activePlugins[i];
       // Fail-safe: never inject a base-game-only plugin's script while a
       // non-translation overhaul owns the dataset. setActiveMod is supposed
       // to prune _activePlugins before reloading, but if the manifest grew
       // a new requiresBaseGame flag between sessions (or _modsData wasn't
       // available at the prior setActiveMod call) the stale entry survives.
-      if (!isModAvailable(pid)) continue;
-      loadPluginMod(pid);
+      if (isModAvailable(_activePlugins[i])) ids.push(_activePlugins[i]);
     }
+    var fetched = new Array(ids.length);
+    var remaining = ids.length;
+    function runAll() {
+      for (var k = 0; k < fetched.length; k++) execPluginScripts(fetched[k]);
+      if (callback) callback();
+    }
+    if (remaining === 0) {
+      runAll();
+      return;
+    }
+    ids.forEach(function (pid, idx) {
+      fetchPluginScripts(pid, function (texts) {
+        fetched[idx] = texts;
+        if (--remaining === 0) runAll();
+      });
+    });
   }
+
+  // Plugin mods patch engine classes (Window_Message, Scene_Map, ...), and an
+  // object built before its patch never gets what the patch adds in its
+  // constructor: YEP_X_MessageBacklog gives each message window a backlog
+  // window, and a message window without one crashed the first time it
+  // updated ("reading 'active'"). Loading them from Scene_Boot.start without
+  // waiting was only safe while the first scene held no such object. A mod
+  // that opens on a map (ROLESWAP's pre-title events) builds its message
+  // window within a frame or two, well before a network fetch returns on a
+  // phone. So Scene_Boot is not ready until every active plugin has run.
+  var _bootPluginsState = null; // null -> "loading" -> "done"
+  function pluginsReadyForBoot() {
+    if (_bootPluginsState === "done") return true;
+    if (_bootPluginsState === null) {
+      _bootPluginsState = "loading";
+      // Same order as before: the shim's own patches, then the plugins.
+      applyPatches();
+      loadActivePlugins(function () {
+        _bootPluginsState = "done";
+      });
+    }
+    return _bootPluginsState === "done";
+  }
+
 
   // Notify SW of active mod + language on page load
   if (navigator.serviceWorker) {
@@ -8752,13 +8838,19 @@
     // localStorage, causing mod saves to appear lost after a reload.
     var _post_drm_isReady = Scene_Boot.prototype.isReady;
     Scene_Boot.prototype.isReady = function () {
-      return _savesRestored && _post_drm_isReady.call(this);
+      return (
+        _savesRestored &&
+        _post_drm_isReady.call(this) &&
+        pluginsReadyForBoot()
+      );
     };
 
     var _orig_bootStart = Scene_Boot.prototype.start;
     Scene_Boot.prototype.start = function () {
+      // Already done by pluginsReadyForBoot; kept for a boot scene whose
+      // isReady was replaced after this hook (applyPatches runs once).
       applyPatches();
-      loadActivePlugins();
+      pluginsReadyForBoot();
       // Read the install counts once, here at game entry. loadInstallCounts is
       // load-once for the session, so the Mods menu later reuses this result
       // instead of re-reading: installs stay live via trackModInstall's local

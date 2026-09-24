@@ -534,10 +534,19 @@ Window_Message.prototype.createMessageBacklogWindow = function() {
   SceneManager._scene.addChild(this._backlogWindow);
 };
 
+// A message window built before this plugin ran has no backlog window: the
+// player loads plugins after the engine, so a mod that opens straight on a
+// map (pre-title events) or a plugin enabled mid-game leaves one behind.
+// Every reader goes through here so that window gets its backlog on first use.
+Window_Message.prototype.backlogWindow = function() {
+  if (!this._backlogWindow) this.createMessageBacklogWindow();
+  return this._backlogWindow;
+};
+
 Yanfly.MsgBacklog.Window_Message_isAnySubWindowActive =
   Window_Message.prototype.isAnySubWindowActive;
 Window_Message.prototype.isAnySubWindowActive = function() {
-  if (this._backlogWindow.active) return true;
+  if (this._backlogWindow && this._backlogWindow.active) return true;
   return Yanfly.MsgBacklog.Window_Message_isAnySubWindowActive.call(this);
 };
 
@@ -566,11 +575,11 @@ Window_Message.prototype.updateBacklogInput = function() {
 };
 
 Window_Message.prototype.openBacklogWindow = function() {
-  this._backlogWindow.fullActivate();
+  this.backlogWindow().fullActivate();
 };
 
 Window_Message.prototype.setReturnWindow = function(target) {
-  this._backlogWindow.setReturnWindow(target);
+  this.backlogWindow().setReturnWindow(target);
 };
 
 //=============================================================================
