@@ -347,11 +347,102 @@
     return { manifest: manifest, zip: zip };
   }
 
+  /*
+   * One small entry near the START of a package, read without downloading
+   * the rest: the Mods menu wants the icon of a catalog mod nobody has
+   * installed, and the package around it can be hundreds of megabytes.
+   *
+   * build() writes mod.json first and the icon right after it, so the icon
+   * ends a few hundred KB into the file. This streams the package from byte
+   * 0, walks the local headers as the bytes arrive, and abandons the request
+   * the moment the entry is complete. It does not use Range: GitHub Pages
+   * (this site and the extras host) gzips a .tcoaalmod on the way out and
+   * applies a range to the gzipped copy, so an offset read out of the zip
+   * lands on the wrong bytes there. Reading from the start works on any
+   * host, since the browser undoes the gzip itself.
+   *
+   * Resolves to the entry's bytes, or null when the package has no such entry
+   * among its first few, is not a zip, or would take more than
+   * REMOTE_PREFIX_MAX bytes to reach it. A network failure rejects.
+   */
+  var REMOTE_ENTRY_HOPS = 4;
+  var REMOTE_PREFIX_MAX = 32 * 1024 * 1024;
+
+  async function fetchEntry(url, name, fetchFn) {
+    var get = fetchFn || fetch;
+    var ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var res = await get(url, ctl ? { signal: ctl.signal } : undefined);
+    if (!res.ok || !res.body || !res.body.getReader) {
+      if (ctl) ctl.abort();
+      return null;
+    }
+    var reader = res.body.getReader();
+    var buf = new Uint8Array(64 * 1024);
+    var have = 0;
+    var ended = false;
+
+    // Read until at least `n` bytes have arrived; false when the file (or
+    // the budget) ends first.
+    async function need(n) {
+      if (n > REMOTE_PREFIX_MAX) return false;
+      while (have < n && !ended) {
+        var chunk = await reader.read();
+        if (chunk.done) {
+          ended = true;
+          break;
+        }
+        var v = chunk.value;
+        if (have + v.length > buf.length) {
+          var grown = new Uint8Array(Math.max(buf.length * 2, have + v.length));
+          grown.set(buf.subarray(0, have));
+          buf = grown;
+        }
+        buf.set(v, have);
+        have += v.length;
+      }
+      return have >= n;
+    }
+
+    try {
+      var off = 0;
+      for (var hop = 0; hop < REMOTE_ENTRY_HOPS; hop++) {
+        if (!(await need(off + 30))) return null;
+        var dv = new DataView(buf.buffer, buf.byteOffset + off, 30);
+        if (dv.getUint32(0, true) !== 0x04034b50) return null;
+        // Bit 3: sizes live in a data descriptor after the data, so this
+        // header cannot say where the entry ends. build() never sets it.
+        if (dv.getUint16(6, true) & 8) return null;
+        var method = dv.getUint16(8, true);
+        var compSize = dv.getUint32(18, true);
+        var nameLen = dv.getUint16(26, true);
+        var extraLen = dv.getUint16(28, true);
+        var start = off + 30 + nameLen + extraLen;
+        if (!(await need(start))) return null;
+        var entryName = new TextDecoder().decode(buf.subarray(off + 30, off + 30 + nameLen));
+        if (entryName === name) {
+          if (method !== 0 && method !== 8) return null;
+          if (!(await need(start + compSize))) return null;
+          var body = buf.slice(start, start + compSize);
+          return method === 0 ? body : await inflateRaw(body);
+        }
+        off = start + compSize;
+      }
+      return null;
+    } finally {
+      // Whatever happened, the rest of the package is not wanted.
+      try {
+        reader.cancel().catch(function () {});
+      } catch (e) {}
+      if (ctl) ctl.abort();
+    }
+  }
+
   root.ModPackage = {
     FORMAT: FORMAT,
     READABLE: READABLE,
     openZip: openZip,
     open: open,
+    fetchEntry: fetchEntry,
     crc32: crc32,
     writeZip: writeZip,
     readZip: readZip,

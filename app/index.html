@@ -2153,7 +2153,12 @@
               var cache = r.langData
                 ? idbPut(db, "__mod_lang_data__:" + id, r.langData)
                 : idbDelete(db, "__mod_lang_data__:" + id);
-              return cache.then(function () {
+              // The new version's icon, which the Mods menu shows first
+              // (lang-shim installModFromPackage keeps it the same way).
+              var icon = r.icon
+                ? idbPut(db, "__mod_icon__:" + id, r.icon.slice().buffer)
+                : idbDelete(db, "__mod_icon__:" + id);
+              return Promise.all([cache, icon]).then(function () {
                 return idbPut(
                   db,
                   "__mod_meta__:" + id,

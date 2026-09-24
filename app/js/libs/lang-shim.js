@@ -1609,36 +1609,185 @@
   // goes to state 'error' and notifies listeners so the caller can redraw /
   // advance. Callers already guard on `isReady() && !isError() && width > 1`.
   function loadSafeBitmap(url) {
+    return loadSafeBitmapFrom([url]);
+  }
+
+  // loadSafeBitmap over a list of candidates, tried in order until one
+  // decodes. A candidate is a URL, or a function returning a URL or a promise
+  // of one (null / a rejection skips it), so a costly source is only asked
+  // for once every cheaper one has failed. Errors only when all have.
+  function loadSafeBitmapFrom(sources) {
     var bitmap = Object.create(Bitmap.prototype);
     bitmap._defer = true;
     bitmap.initialize();
-    bitmap._url = url;
+    bitmap._url = "";
     bitmap._loadingState = "requesting";
-    var image = new Image();
-    // Cross-origin thumbnails (extras.tcoaal.app) need CORS so the canvas /
-    // WebGL texture isn't tainted when blt into a window's contents. The
-    // remote host already serves these CORS-enabled (the DRM path XHRs them).
-    try {
-      if (new URL(url, location.href).origin !== location.origin) {
-        image.crossOrigin = "anonymous";
-      }
-    } catch (e) {}
-    image.addEventListener("load", function () {
-      bitmap._image = image;
-      bitmap._loadingState = "requestCompleted";
-      try {
-        bitmap.decode(); // -> 'loaded', builds the texture, fires listeners
-      } catch (e) {
-        bitmap._loadingState = "error";
-        bitmap._callLoadListeners();
-      }
-    });
-    image.addEventListener("error", function () {
+
+    function fail() {
       bitmap._loadingState = "error";
       bitmap._callLoadListeners();
-    });
-    image.src = url;
+    }
+
+    function load(url, next) {
+      bitmap._url = url;
+      var image = new Image();
+      // Cross-origin thumbnails (extras.tcoaal.app) need CORS so the canvas /
+      // WebGL texture isn't tainted when blt into a window's contents. The
+      // remote host already serves these CORS-enabled (the DRM path XHRs them).
+      try {
+        if (new URL(url, location.href).origin !== location.origin) {
+          image.crossOrigin = "anonymous";
+        }
+      } catch (e) {}
+      image.addEventListener("load", function () {
+        bitmap._image = image;
+        bitmap._loadingState = "requestCompleted";
+        try {
+          bitmap.decode(); // -> 'loaded', builds the texture, fires listeners
+        } catch (e) {
+          next();
+        }
+      });
+      image.addEventListener("error", next);
+      image.src = url;
+    }
+
+    function attempt(i) {
+      if (i >= sources.length) {
+        fail();
+        return;
+      }
+      var next = function () {
+        attempt(i + 1);
+      };
+      var src = sources[i];
+      if (typeof src !== "function") {
+        if (src) load(src, next);
+        else next();
+        return;
+      }
+      var got;
+      try {
+        got = src();
+      } catch (e) {
+        next();
+        return;
+      }
+      Promise.resolve(got).then(
+        function (url) {
+          if (url) load(url, next);
+          else next();
+        },
+        next,
+      );
+    }
+
+    attempt(0);
     return bitmap;
+  }
+
+  // A mod's Mods-menu thumbnail. A catalog mod published as one .tcoaalmod
+  // has three places its icon can come from, best first: the icon its
+  // installed package carried (kept in IDB at install, so it is the installed
+  // version's and works offline), the catalog's icon URL (an icon.png a host
+  // extracted beside the package), and the package itself, streamed only as
+  // far as the icon (ModPackage.fetchEntry). The last one means a host that
+  // never extracted the icon, or one that has not redeployed since the
+  // package changed, still shows it.
+  // Every other mod keeps its single URL (a user-added one's is already a
+  // blob: of the icon its package carried).
+  function loadModIconBitmap(mod) {
+    var entry = getModEntry(mod.key) || {};
+    if (!entry.package) {
+      return mod.icon ? loadSafeBitmap(modIconUrl(mod.icon)) : null;
+    }
+    return loadSafeBitmapFrom([
+      function () {
+        return storedModIconUrl(mod.key);
+      },
+      mod.icon ? modIconUrl(mod.icon) : null,
+      function () {
+        return packageIconUrl(mod.key, entry);
+      },
+    ]);
+  }
+
+  // blob: URLs, one per mod, so reopening the Mods menu does not re-read IDB
+  // or re-download anything for the same bytes. A stored icon changes only
+  // when the mod is installed or uninstalled (forgetStoredModIcon); a
+  // package's is keyed by the package URL, which carries its version.
+  var _storedIconUrls = {};
+  var _packageIconUrls = {};
+
+  function blobUrlOf(bytes) {
+    if (!bytes || typeof URL === "undefined" || !URL.createObjectURL) return null;
+    try {
+      return URL.createObjectURL(
+        bytes instanceof Blob ? bytes : new Blob([bytes], { type: "image/png" }),
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function storedModIconUrl(key) {
+    if (!_storedIconUrls[key]) {
+      _storedIconUrls[key] = new Promise(function (resolve) {
+        openAssetsDb(function (db) {
+          if (!db) {
+            resolve(null);
+            return;
+          }
+          getAssetMain(db, MOD_ICON_KEY_PREFIX + key, function (val) {
+            resolve(blobUrlOf(val));
+          });
+        });
+      });
+    }
+    return _storedIconUrls[key];
+  }
+
+  function forgetStoredModIcon(key) {
+    var p = _storedIconUrls[key];
+    delete _storedIconUrls[key];
+    if (p) {
+      p.then(function (url) {
+        if (url) {
+          try {
+            URL.revokeObjectURL(url);
+          } catch (e) {}
+        }
+      });
+    }
+  }
+
+  function packageIconUrl(key, entry) {
+    var url = packageUrl(entry);
+    var memo = _packageIconUrls[key];
+    if (memo && memo.url === url) return memo.promise;
+    if (memo) {
+      memo.promise.then(function (old) {
+        if (old) {
+          try {
+            URL.revokeObjectURL(old);
+          } catch (e) {}
+        }
+      });
+    }
+    var promise = ensureModInstallLibs()
+      .then(function () {
+        return window.ModPackage.fetchEntry(url, "icon.png", fetch.bind(window));
+      })
+      .then(blobUrlOf);
+    // A failure (offline, a host without range support) is not remembered:
+    // the next visit to the Mods menu asks again.
+    promise.catch(function () {
+      if (_packageIconUrls[key] && _packageIconUrls[key].promise === promise) {
+        delete _packageIconUrls[key];
+      }
+    });
+    _packageIconUrls[key] = { url: url, promise: promise };
+    return promise;
   }
 
   // Browser Fullscreen API helpers
@@ -2881,15 +3030,21 @@
     };
   }
 
-  function installModFromPackage(modId, entry, onProgress, onDone, onError) {
+  // ?v= per version: a republished package keeps its URL, and a cached
+  // response for it would install the previous release.
+  function packageUrl(entry) {
     var version = entry.version || "";
-    // ?v= per version: a republished package keeps its URL, and a cached
-    // response for it would install the previous release.
-    var url =
+    return (
       (isRemotePath(entry.package)
         ? entry.package
         : "/" + String(entry.package).replace(/^\/+/, "")) +
-      (version ? "?v=" + encodeURIComponent(version) : "");
+      (version ? "?v=" + encodeURIComponent(version) : "")
+    );
+  }
+
+  function installModFromPackage(modId, entry, onProgress, onDone, onError) {
+    var version = entry.version || "";
+    var url = packageUrl(entry);
     var db;
     onProgress({ percent: 0, message: "Downloading..." });
     ensureModInstallLibs()
@@ -2914,6 +3069,18 @@
           id: modId,
           fetch: fetch.bind(window),
           onProgress: packageProgress(onProgress, 60, 98),
+        });
+      })
+      .then(function (r) {
+        // The icon this package carries, kept like a user-added mod's: the
+        // Mods menu then shows the installed version's own icon, offline too,
+        // whatever the catalog's icon URL answers.
+        return (r.icon
+          ? putAssetP(db, MOD_ICON_KEY_PREFIX + modId, r.icon.slice().buffer)
+          : deleteAssetP(db, MOD_ICON_KEY_PREFIX + modId)
+        ).then(function () {
+          forgetStoredModIcon(modId);
+          return r;
         });
       })
       .then(function (r) {
@@ -3081,13 +3248,15 @@
         deleteAsset(db, "__mod_meta__:" + modId, function () {
           delete _modStatus[modId];
           if (getActiveMod() === modId) setActiveMod(null);
+          // The icon a package install kept (catalog or user-added).
+          deleteAsset(db, MOD_ICON_KEY_PREFIX + modId);
+          forgetStoredModIcon(modId);
           // If this was an imported (custom) mod, drop it from the registry too
           // so it no longer appears in the Mods menu. Its save scope ({tag}:)
           // is intentionally left intact, so a later re-import keeps the saves.
           if (_importedMods && _importedMods[modId]) {
             delete _importedMods[modId];
             if (_modsData) delete _modsData[modId];
-            deleteAsset(db, MOD_ICON_KEY_PREFIX + modId);
             deleteAsset(db, "__mod_lang_data__:" + modId);
             if (_importedIconUrls[modId]) {
               try {
@@ -7690,8 +7859,8 @@
     Window_ModActive.prototype._loadIcons = function () {
       var self = this;
       var mod = this._mods[0];
-      if (mod && mod.icon) {
-        var bmp = loadSafeBitmap(modIconUrl(mod.icon));
+      var bmp = mod ? loadModIconBitmap(mod) : null;
+      if (bmp) {
         this._iconBitmaps[mod.key] = bmp;
         bmp.addLoadListener(function () {
           self.refresh();
@@ -7812,8 +7981,8 @@
       var self = this;
       for (var i = 0; i < this._mods.length; i++) {
         var mod = this._mods[i];
-        if (mod.icon) {
-          var bmp = loadSafeBitmap(modIconUrl(mod.icon));
+        var bmp = loadModIconBitmap(mod);
+        if (bmp) {
           this._iconBitmaps[mod.key] = bmp;
           bmp.addLoadListener(function () {
             self.refresh();

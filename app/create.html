@@ -1226,11 +1226,15 @@
 
         <p class="hint">
           Update checks. Publish your <code>.tcoaalmod</code> as a GitHub
-          release and name the repo here: the installer asks when it opens and
-          again when the player quits the game, and offers them the update if a
-          newer release than the version above has been published. An online
-          installer already knows where your mod lives and checks there, so it
-          needs nothing here.
+          release and name the repo here. Each time the installer opens, and
+          again when the player quits the game, it looks for a release newer
+          than the version above and offers it to them.
+        </p>
+        <p class="hint">
+          Fill this in for every version you build, updates included: the repo
+          is saved inside the <code>.tcoaalmod</code>, and a version built
+          without it leaves the players who install it with nowhere to look
+          for the next one.
         </p>
         <div class="field">
           <label for="meta-update-github">GitHub repo</label>
