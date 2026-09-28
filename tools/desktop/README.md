@@ -35,8 +35,9 @@ Two rules make the theme contract work:
   arbitrary top-level script; a `const` here and a `var` of the same name there
   are a SyntaxError that would kill the theme's script before its first line.
 
-`.github/workflows/deploy-stubs.yml` builds the three stubs and publishes them
-to `/stub/` (plus `stubs.json`) for create.html to fetch.
+`.github/workflows/deploy-stubs.yml` builds the three stubs; release.yml
+publishes them (plus `stubs.json`) on the version release, and deploy-web.yml
+copies them to `/stub/` for create.html to fetch.
 
 The **creator** app (project extraction, mod authoring) is not here. It
 drives `extract-project.js`, which this repo does not ship; it lives in the
@@ -214,9 +215,12 @@ TCOAAL_GAME="/path/to/a/copy/of/the/game" \
 `.github/workflows/deploy-stubs.yml` builds the three stubs (Windows exe, macOS
 `.app` zipped, Linux AppImage), stamps the release version into the bundle,
 stages the runner's own Node as the embedded runtime, proves each stub installs
-a mod stamped into it, and publishes them plus `stubs.json` as the assets of the
-`stub/v<version>` GitHub Release. A release rather than a branch because the
+a mod stamped into it, and hands them over as one artifact, each named
+`TCOAAL-Mod-Installer-v<version>-<platform>` with a `stubs.json` naming them.
+`release.yml` publishes them, with the APK and the Microsoft Store package, on
+the ONE `v<version>` GitHub Release. A release rather than a branch because the
 Linux AppImage is over the 100 MB per-file limit git on github.com enforces;
-release assets take 2 GB. `deploy-web.yml` downloads that set into the deployed
-site at `/stub/` (hash-checking each asset against `stubs.json` first), and
-`release.yml` runs both in order for one version.
+release assets take 2 GB. `deploy-web.yml` then downloads the set into the
+deployed site at `/stub/` (hash-checking each asset against `stubs.json`
+first), since create.html cannot read release assets across origins, and
+`tools/build-mod.js` downloads them straight from `releases/latest`.

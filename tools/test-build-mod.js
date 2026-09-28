@@ -141,6 +141,46 @@ function writeConfig(repo, over) {
     assert(/"id"/.test(msg) && /"game"/.test(msg) && /"saves"/.test(msg) && /unknown plugin "Nope"/.test(msg), msg);
   });
 
+  await test("mod.json falls back on the repository's name, owner and description", async () => {
+    const repo = path.join(tmp, "cfgdefaults");
+    put(repo, "www/a.txt", "x");
+    put(repo, ".config/mod.json", JSON.stringify({ game: "3.0.13", name: "", author: "" }));
+    const cfg = readConfig(repo, L.BundledPlugins, {
+      name: "My_Cool.Mod",
+      author: "octo",
+      description: "From the repository.",
+    });
+    eq(cfg.id, "my-cool-mod");
+    eq(cfg.name, "My_Cool.Mod");
+    eq(cfg.author, "octo");
+    eq(cfg.description, "From the repository.");
+    eq(cfg.saves, "isolated");
+    eq(cfg.content, "www");
+    eq(cfg.plugins.length, 0);
+    eq(cfg.thumbnail, "img/titles1/Book.png");
+  });
+
+  await test("a thumbnail is a URL or a path inside the repository", async () => {
+    const repo = path.join(tmp, "cfgthumb");
+    put(repo, "www/a.txt", "x");
+    for (const [thumbnail, ok] of [
+      ["img/titles1/Title.png", true],
+      ["/art/thumb.png", true],
+      ["https://example.com/t.png", true],
+      ["../outside.png", false],
+      ["http://example.com/t.png", false],
+    ]) {
+      writeConfig(repo, { thumbnail });
+      let err = null;
+      try {
+        readConfig(repo, L.BundledPlugins);
+      } catch (e) {
+        err = e;
+      }
+      eq(!err, ok, thumbnail + (err ? ": " + err.message : ""));
+    }
+  });
+
   await test("names that would escape or misbehave on Windows are refused", async () => {
     for (const bad of ["../x", "a/../b", "C:/x", "a\\b", "CON", "a/nul.txt", "x.", "x "]) {
       eq(isSafeRelPath(bad), false, bad);
@@ -174,7 +214,7 @@ function writeConfig(repo, over) {
   await test("a repository builds against the reference index", async () => {
     result = await build({
       repo, out, version: "1.2.3", site: siteUrl, github: "octo/test-mod",
-      installers: [], os: [], log: quiet,
+      installers: [], os: [], log: quiet, repoDefaults: null,
     });
     eq(result.indexed, true);
     eq(result.files.join(","), "test-mod-1.2.3.tcoaalmod");
@@ -227,6 +267,28 @@ function writeConfig(repo, over) {
     eq(text("img/pictures/Renamed.png"), "PNG-camera");
     eq(JSON.parse(text("data/Map001.json")).displayName, "Modded");
     assert(/"name":"MouseControl"/.test(text("js/plugins.js")), "plugin registered");
+  });
+
+  await test("with no icon in .config, the thumbnail is the package icon", async () => {
+    const repo6 = path.join(tmp, "repo6");
+    put(repo6, "www/img/pictures/New.png", "PNG-new");
+    const png = await require("sharp")({
+      create: { width: 64, height: 32, channels: 4, background: { r: 200, g: 0, b: 0, alpha: 1 } },
+    }).png().toBuffer();
+    put(repo6, "www/img/titles1/Book.png", png);
+    writeConfig(repo6, { game: "9.9.9" });
+    const r = await build({
+      repo: repo6, out: path.join(tmp, "dist8"), version: "1.0.0", site: siteUrl,
+      installers: [], os: [], log: quiet, repoDefaults: null,
+    });
+    const parsed = await L.ModPackage.parse(
+      new Uint8Array(fs.readFileSync(path.join(tmp, "dist8", r.files[0]))),
+    );
+    const icon = parsed.entries.get("icon.png");
+    assert(icon && icon[0] === 0x89, "a PNG icon");
+    const meta = await require("sharp")(Buffer.from(icon)).metadata();
+    eq(meta.width, 64, "squared to the longer side");
+    eq(meta.height, 64);
   });
 
   await test("without a reference index every file is carried, with a warning", async () => {

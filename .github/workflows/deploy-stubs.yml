@@ -273,8 +273,7 @@ jobs:
       # signs it. The manifest is tools/desktop/user/msix/AppxManifest.xml; its
       # identity is what Partner Center reserved for the app, kept in repository
       # variables, and without them there is no package to make. Its own
-      # artifact, never a stub-*: the publish job below serves every stub-*
-      # file on the site.
+      # artifact, never a stub-*: every stub-* file is served on the site.
       - name: Package the loader for the Microsoft Store
         if: matrix.platform == 'windows' && vars.MSSTORE_IDENTITY_NAME != ''
         shell: pwsh
@@ -331,17 +330,15 @@ jobs:
           path: store/TCOAAL-Mod-Loader.msix
           if-no-files-found: error
 
-  # The built set is stored as the assets of a `stub/v<version>` GitHub
-  # Release, the same way deploy-android.yml stores its APK. It cannot be
-  # stored in a branch: github.com rejects any pushed file over 100 MB and the
-  # Linux AppImage is already past that (the AppImage bundles webkit2gtk and
-  # the embedded Node runtime, so it only grows). Release assets take 2 GB
-  # each, are permanent per version, and are what deploy-web.yml pulls from.
-  publish:
+  # The set as release.yml publishes it: every stub under its download name
+  # (TCOAAL-Mod-Installer-v<version>-<platform>), plus stubs.json, which
+  # maps each platform to its file, sha256, size and package format. All of
+  # it becomes assets of the version release (v<version>), which is where
+  # deploy-web.yml copies /stub/ from and where tools/build-mod.js downloads
+  # the stubs (releases/latest/download/stubs.json).
+  assemble:
     needs: build
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
     steps:
       # The checkout is for one line: the package format these stubs read.
       # Each stub embeds this commit's mod-loader and mod-package.js, so the
@@ -354,14 +351,14 @@ jobs:
           path: incoming
           pattern: stub-*
           merge-multiple: true
-      - name: Assemble stub/ and stubs.json
+      - name: Assemble the stubs and stubs.json
         env:
           VERSION: ${{ inputs.version }}
         run: |
           mkdir -p stub
-          find incoming -type f -exec cp {} stub/ \;
           node -e '
-            const fs = require("fs"), crypto = require("crypto");
+            const fs = require("fs"), path = require("path"), crypto = require("crypto");
+            const version = process.argv[1];
             const pkg = fs.readFileSync("app/js/libs/mod-package.js", "utf8");
             const format = (pkg.match(/var FORMAT = "(tcoaal-mod\/\d+)"/) || [])[1];
             if (!format) {
@@ -369,34 +366,21 @@ jobs:
               process.exit(1);
             }
             const out = {};
-            for (const f of fs.readdirSync("stub")) {
-              if (f === "stubs.json") continue;
-              const b = fs.readFileSync("stub/" + f);
-              out[f] = {
-                file: f,
+            for (const platform of fs.readdirSync("incoming")) {
+              const b = fs.readFileSync(path.join("incoming", platform));
+              const file = "TCOAAL-Mod-Installer-v" + version + "-" + platform;
+              fs.writeFileSync(path.join("stub", file), b);
+              out[platform] = {
+                file,
                 sha256: crypto.createHash("sha256").update(b).digest("hex"),
                 size: b.length,
-                version: process.argv[1],
-                format: format,
+                version,
+                format,
               };
             }
             fs.writeFileSync("stub/stubs.json", JSON.stringify(out, null, 2));
           ' "$VERSION"
-      # stubs.json ships as an asset too: deploy-web.yml serves the downloaded
-      # set verbatim at /stub/, and app/create.html reads /stub/stubs.json to
-      # get the sha256 it checks each stub against before stamping it.
-      - name: Publish the set as the stub release
-        uses: softprops/action-gh-release@v3.0.1
-        with:
-          tag_name: stub/v${{ inputs.version }}
-          name: Installer stubs v${{ inputs.version }}
-          target_commitish: ${{ github.sha }}
-          files: stub/*
-          fail_on_unmatched_files: true
-          # The version release published at the end of release.yml is the
-          # latest one; this is a store, not a headline.
-          make_latest: false
-      - name: Upload the published set as one artifact
+      - name: Upload the set as one artifact
         uses: actions/upload-artifact@v7
         with:
           name: installer-stubs

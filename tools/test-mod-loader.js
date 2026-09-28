@@ -1077,14 +1077,27 @@ function fetchStubEnv(tmp, map) {
         ],
       }),
     );
-    const info = path.join(tmp, "tcoaalmod.json");
-    fs.writeFileSync(info, JSON.stringify({ name: "Mod A, the community cut", thumbnail: "./art/thumb.png" }));
+    // The repository's .config/mod.json (create.html's GitHub setup): no
+    // author and no description, and no thumbnail, so the default title art
+    // is looked for in its www folder, here under "game".
+    const info = path.join(tmp, "community-mod.json");
+    fs.writeFileSync(
+      info,
+      JSON.stringify({ id: "mod-a", name: "Mod A, the community cut", author: "", description: "", content: "game" }),
+    );
+    const repoInfo = path.join(tmp, "repo-one.json");
+    fs.writeFileSync(repoInfo, JSON.stringify({ description: "The repository's own words." }));
+    const notImage = path.join(tmp, "not-image.png");
+    fs.writeFileSync(notImage, "TCOAAL\u0000 an encrypted title");
     const thumb = path.join(tmp, "thumb.png");
     fs.writeFileSync(thumb, Buffer.from([0x89, 0x50, 0x4e, 0x47, 7, 7, 7]));
+    const raw = "https://raw.githubusercontent.com/octo/one/HEAD/";
     const map = {
       "https://api.github.com/repos/octo/one/releases/latest": rel,
-      "https://raw.githubusercontent.com/octo/one/HEAD/tcoaalmod.json": info,
-      "https://raw.githubusercontent.com/octo/one/HEAD/art/thumb.png": thumb,
+      "https://api.github.com/repos/octo/one": repoInfo,
+      [raw + ".config/mod.json"]: info,
+      [raw + "game/www/img/titles1/Book.png"]: notImage,
+      [raw + "game/img/titles1/Book.png"]: thumb,
       [asset]: modA,
     };
     const cache = path.join(tmp, "community-cache.json");
@@ -1097,8 +1110,9 @@ function fetchStubEnv(tmp, map) {
       const m = r.mods[0];
       eq(m.repo, "octo/one");
       eq(m.id, "mod-a", "the package's own id");
-      eq(m.name, "Mod A, the community cut", "tcoaalmod.json's name");
-      eq(m.author, "octo", "the owner, with no author in tcoaalmod.json");
+      eq(m.name, "Mod A, the community cut", ".config/mod.json's name");
+      eq(m.author, "octo", "the owner, with no author in .config/mod.json");
+      eq(m.description, "The repository's own words.", "the repository's description");
       eq(m.version, "2.1.0", "the tag");
       eq(m.package, asset);
       eq(m.icon, "data:image/png;base64," + fs.readFileSync(thumb).toString("base64"));

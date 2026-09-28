@@ -23,7 +23,8 @@
  * The repository describes the mod in .config/:
  *
  *   .config/mod.json         id, name, author, description, game, content,
- *                            saves, plugins, updates (see readConfig below)
+ *                            thumbnail, saves, plugins, updates (see
+ *                            readConfig below)
  *   .config/base-index.json  the reference index of the game release the mod
  *                            is built on (ModDiff.baseIndex)
  *   .config/icon.png         optional, the mod's icon (PNG, JPEG, WebP)
@@ -52,7 +53,10 @@
  *
  *   node tools/build-mod.js --repo . --version 1.2.3 --out dist
  *        [--installers offline,online] [--os windows,macos,linux]
- *        [--github owner/repo] [--site https://tcoaal.app]
+ *        [--github owner/repo] [--site https://tcoaal.app] [--stubs <url>]
+ *
+ * The installer stubs are the assets of this project's latest GitHub release
+ * (--stubs, DEFAULT_STUBS); the plugins come from --site.
  *
  * Every library below is the browser's own file (tools/lib/load-libs.js):
  * the package, the stamping and the codec are create.html's code, not a
@@ -64,6 +68,10 @@ const path = require("path");
 const { loadLibs } = require("./lib/load-libs.js");
 
 const DEFAULT_SITE = "https://tcoaal.app";
+// Where the installer stubs and their stubs.json are published: the assets of
+// this project's newest release (.github/workflows/release.yml).
+const DEFAULT_STUBS = "https://github.com/Kidev-org/TCOAALBrowserLoader/releases/latest/download";
+const DEFAULT_THUMBNAIL = "img/titles1/Book.png";
 const OS_STUBS = {
   windows: "win-x64.exe",
   macos: "macos.zip",
@@ -168,20 +176,28 @@ function walkFiles(dir, atRepoRoot) {
  * cannot build what the page would refuse:
  *
  *   id           lowercase letters, digits and dashes, 3 to 40 characters
- *   name         up to 60 characters
- *   author       optional
- *   description  optional, up to 500 characters
+ *                (default: made from the repository's name)
+ *   name         up to 60 characters (default: the repository's name)
+ *   author       default: the repository's owner
+ *   description  up to 500 characters (default: the repository's
+ *                description)
  *   game         the game release the mod is made for, such as "3.0.13";
  *                optional when .config/base-index.json says it
  *   content      "" (default) or a path from the repository root: where to
  *                look for the mod's files (see contentRoot)
+ *   thumbnail    the picture the desktop loader's "Available online" list
+ *                shows (app/js/libs/community-mods.js): an https URL, a path
+ *                from the repository root ("/art/thumb.png"), or a path in
+ *                the mod's www folder (default "img/titles1/Book.png", the
+ *                title art). Also the package icon when .config has none.
  *   icon         the icon inside .config (default "icon.png" when present)
  *   saves        "isolated" (default) or "shared"
  *   plugins      Browser Player plugins to ship, by name (see
  *                app/js/libs/bundled-plugins.js)
  *   updates      false to leave installers without an update source
  */
-function readConfig(repo, bundled) {
+function readConfig(repo, bundled, defaults) {
+  const d = defaults || {};
   const dir = path.join(repo, ".config");
   const file = path.join(dir, "mod.json");
   if (!fs.existsSync(file)) fail("No .config/mod.json in " + repo + ".");
@@ -193,12 +209,13 @@ function readConfig(repo, bundled) {
   }
   const str = (v) => (typeof v === "string" ? v.trim() : "");
   const cfg = {
-    id: str(c.id),
-    name: str(c.name),
-    author: str(c.author),
-    description: str(c.description),
+    id: str(c.id) || idFromName(d.name),
+    name: str(c.name) || str(d.name).slice(0, 60),
+    author: str(c.author) || str(d.author),
+    description: str(c.description) || str(d.description).slice(0, 500),
     game: str(c.game),
     content: str(c.content),
+    thumbnail: str(c.thumbnail) || DEFAULT_THUMBNAIL,
     icon: str(c.icon),
     saves: str(c.saves) || "isolated",
     plugins: Array.isArray(c.plugins) ? c.plugins.map(String) : [],
@@ -222,6 +239,12 @@ function readConfig(repo, bundled) {
   if (cfg.content && cfg.content !== "." && !isSafeRelPath(cfg.content)) {
     errors.push('"content": a folder inside the repository.');
   }
+  if (
+    !/^https:\/\/\S+$/i.test(cfg.thumbnail) &&
+    !isSafeRelPath(cfg.thumbnail.replace(/^\/+/, ""))
+  ) {
+    errors.push('"thumbnail": an https URL, a path from the repository root ("/art/thumb.png") or in the www folder.');
+  }
   const known = bundled.map((p) => p.name);
   for (const p of cfg.plugins) {
     if (known.indexOf(p) === -1) {
@@ -235,6 +258,16 @@ function readConfig(repo, bundled) {
   cfg.iconFile = iconName ? path.join(dir, iconName) : null;
   if (cfg.iconFile && !fs.existsSync(cfg.iconFile)) {
     fail(`The icon .config/${iconName} does not exist.`);
+  }
+  // No icon of its own: the thumbnail, when it is a file of the repository.
+  if (!cfg.iconFile && !/^https:/i.test(cfg.thumbnail)) {
+    const t = cfg.thumbnail.charAt(0) === "/"
+      ? path.join(repo, cfg.thumbnail.replace(/^\/+/, ""))
+      : path.join(cfg.contentDir, cfg.thumbnail);
+    if (fs.existsSync(t) && fs.statSync(t).isFile()) {
+      cfg.iconFile = t;
+      cfg.iconFromThumbnail = true;
+    }
   }
   cfg.themeDir = path.join(dir, "theme");
   cfg.index = readIndex(path.join(dir, "base-index.json"));
@@ -250,6 +283,16 @@ function readConfig(repo, bundled) {
     fail('Name the game release in .config/mod.json ("game": "3.0.13") or add .config/base-index.json.');
   }
   return cfg;
+}
+
+// A mod id out of a repository name: "My_Cool.Mod" -> "my-cool-mod".
+function idFromName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/, "");
 }
 
 function readIndex(file) {
@@ -340,6 +383,24 @@ async function fetchJsonOrNull(url) {
   } catch (e) {
     return null;
   }
+}
+
+/*
+ * What .config/mod.json falls back on: the repository's name, owner and
+ * description. The description is the API's (GITHUB_TOKEN when the workflow
+ * provides one); a repository that cannot be asked just has none.
+ */
+async function repoDefaults(github) {
+  const [owner, name] = github.split("/");
+  let description = "";
+  try {
+    const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+    const headers = { Accept: "application/vnd.github+json" };
+    if (token) headers.Authorization = "Bearer " + token;
+    const res = await fetch("https://api.github.com/repos/" + github, { headers });
+    if (res.ok) description = String((await res.json()).description || "").trim();
+  } catch (e) {}
+  return { owner, name, author: owner, description };
 }
 
 // Icon
@@ -471,8 +532,8 @@ async function fetchPlugins(site, bundled, names) {
 
 // Installers
 
-function stubUrl(site, entry) {
-  return site + "/stub/" + entry.file;
+function stubUrl(stubsBase, entry) {
+  return stubsBase + "/" + encodeURIComponent(entry.file);
 }
 
 async function stamp(L, os, stub, payload, meta, iconPng) {
@@ -513,6 +574,7 @@ async function stamp(L, os, stub, payload, meta, iconPng) {
 async function build(opts) {
   const log = opts.log || console.log;
   const site = String(opts.site || DEFAULT_SITE).replace(/\/+$/, "");
+  const stubsBase = String(opts.stubs || DEFAULT_STUBS).replace(/\/+$/, "");
   const L = loadLibs([
     "tcoaal-codec",
     "json-diff",
@@ -529,7 +591,9 @@ async function build(opts) {
   const installers = opts.installers || [];
   const oses = opts.os || [];
   const github = githubSlug(opts.github);
-  const cfg = readConfig(repo, L.BundledPlugins);
+  const defaults =
+    opts.repoDefaults !== undefined ? opts.repoDefaults : github ? await repoDefaults(github) : null;
+  const cfg = readConfig(repo, L.BundledPlugins, defaults);
   if (installers.indexOf("online") !== -1 && !github) {
     fail("Online installers download the mod from a GitHub repository: pass --github owner/repo.");
   }
@@ -575,7 +639,17 @@ async function build(opts) {
   const fingerprint = index ? index.fingerprint : { gameVersion: cfg.game };
   const variants = [{ base: { label: "v" + cfg.game, fingerprint }, files: diff.files, stats: diff.stats }];
 
-  const iconPng = cfg.iconFile ? await loadIcon(cfg.iconFile) : null;
+  let iconPng = null;
+  if (cfg.iconFile) {
+    try {
+      iconPng = await loadIcon(cfg.iconFile);
+    } catch (e) {
+      // The thumbnail is only borrowed: one that is not a picture (an
+      // encrypted title, say) leaves the package with the default icon.
+      if (!cfg.iconFromThumbnail || e instanceof BuildError) throw e;
+      log(`warning: the thumbnail ${cfg.thumbnail} is not a picture; no icon.`);
+    }
+  }
   const theme = readTheme(cfg.themeDir);
   const meta = {
     id: cfg.id,
@@ -606,8 +680,8 @@ async function build(opts) {
   write(`${cfg.id}-${version}.tcoaalmod`, pkg);
 
   if (installers.length && oses.length) {
-    const stubs = await fetchJsonOrNull(site + "/stub/stubs.json");
-    if (!stubs) fail(`The installer stubs are not published at ${site}/stub/stubs.json.`);
+    const stubs = await fetchJsonOrNull(stubsBase + "/stubs.json");
+    if (!stubs) fail(`The installer stubs are not published at ${stubsBase}/stubs.json.`);
     const payloadFor = {
       offline: pkg,
       online:
@@ -631,7 +705,7 @@ async function build(opts) {
             `but this build writes ${P.FORMAT}.`,
         );
       }
-      const stub = await fetchBytes(stubUrl(site, entry), `the ${os} installer stub`);
+      const stub = await fetchBytes(stubUrl(stubsBase, entry), `the ${os} installer stub`);
       await L.StubStamp.verifyStub(stub, entry.sha256, entry.file);
       for (const kind of installers) {
         const bytes = await stamp(L, os, stub, payloadFor[kind], meta, iconPng);
@@ -648,7 +722,7 @@ async function main() {
     console.log(
       "Usage: node tools/build-mod.js --version 1.2.3 [--repo .] [--out dist]\n" +
         "         [--installers offline,online] [--os windows,macos,linux]\n" +
-        "         [--github owner/repo] [--site https://tcoaal.app]",
+        "         [--github owner/repo] [--site https://tcoaal.app] [--stubs <url>]",
     );
     process.exit(a.help ? 0 : 2);
   }
@@ -657,13 +731,14 @@ async function main() {
     out: a.out,
     version: a.version,
     site: a.site,
+    stubs: a.stubs,
     github: a.github,
     installers: a.installers === "none" ? [] : listArg(a.installers, ["offline", "online"], "installer"),
     os: a.os === "none" ? [] : listArg(a.os, ["windows", "macos", "linux"], "system"),
   });
 }
 
-module.exports = { build, readConfig, diffAgainstIndex, isSafeRelPath, BuildError };
+module.exports = { build, readConfig, diffAgainstIndex, isSafeRelPath, idFromName, BuildError };
 
 if (require.main === module) {
   main().catch((e) => {

@@ -5580,7 +5580,9 @@
       // silent (no popup, no error) so a bad network never disrupts launch.
 
       const APP_UPDATE_REPO = "Kidev-org/TCOAALBrowserLoader";
-      const APP_UPDATE_TAG_PREFIX = "android/v";
+      // The APK is an asset of the version release, "v3.5.0"; releases up
+      // to 3.5.0 published it on a release of its own, "android/v3.5.0".
+      const APP_UPDATE_TAG_RE = /^(?:android\/)?v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)$/;
       const APP_UPDATE_LATEST_KEY = "__android_update_latest__";
       // Last release version we auto-opened the dialog for. Gates the popup to
       // once per new release (instead of the old once-per-day timer, which
@@ -5691,14 +5693,13 @@
         if (!resp.ok) return null;
         const releases = await resp.json();
         if (!Array.isArray(releases)) return null;
-        // The repo publishes both android/v* and desktop/v* releases; the API
-        // returns them newest-first, so the first android/v* entry is latest.
+        // The API returns releases newest-first, so the first version release
+        // carrying an .apk is the latest.
         for (const rel of releases) {
           if (!rel || rel.draft || rel.prerelease) continue;
-          const tag = rel.tag_name || "";
-          if (tag.indexOf(APP_UPDATE_TAG_PREFIX) !== 0) continue;
-          const version = tag.slice(APP_UPDATE_TAG_PREFIX.length);
-          if (!version) continue;
+          const m = APP_UPDATE_TAG_RE.exec(rel.tag_name || "");
+          if (!m) continue;
+          const version = m[1];
           const assets = Array.isArray(rel.assets) ? rel.assets : [];
           const apk = assets.find(function (a) {
             return a && /\.apk$/i.test(a.name || "");

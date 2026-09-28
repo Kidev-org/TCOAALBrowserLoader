@@ -2403,6 +2403,9 @@
       // default icon's fetch and a modder who picks or clears before it
       // lands: whatever they did wins.
       let _iconIsDefault = false;
+      // The title image (img/titles1/<name>) the icon was taken from, which
+      // the GitHub setup names as the mod's thumbnail; null for any other.
+      let _iconTitleName = null;
       let _iconTouched = false;
 
       // The page's own favicon, downscaled: a mod built without touching
@@ -2464,6 +2467,7 @@
         _iconDataUrl = null;
         _iconValid = true;
         _iconIsDefault = false;
+        _iconTitleName = null;
         renderIconPreview();
       }
 
@@ -2480,12 +2484,14 @@
           _iconDataUrl = "data:image/png;base64," + bytesToBase64(_iconBytes);
           _iconValid = true;
           _iconIsDefault = false;
+          _iconTitleName = null;
           renderIconPreview();
         } catch (e) {
           _iconBytes = null;
           _iconDataUrl = null;
           _iconValid = false;
           _iconIsDefault = false;
+          _iconTitleName = null;
           renderIconPreview();
           showFieldError(
             "meta-icon",
@@ -2634,6 +2640,7 @@
           _iconDataUrl = "data:image/png;base64," + bytesToBase64(_iconBytes);
           _iconValid = true;
           _iconIsDefault = false;
+          _iconTitleName = item.name;
           // A file left in the input would silently win the next time the
           // change event fires, and it is no longer what the icon is.
           document.getElementById("meta-icon").value = "";
@@ -2684,6 +2691,7 @@
           _iconDataUrl = "data:image/png;base64," + bytesToBase64(bytes);
           _iconValid = true;
           _iconIsDefault = true;
+          _iconTitleName = null;
           renderIconPreview();
           reloadPreview();
         } catch (e) {
@@ -2748,6 +2756,7 @@
           version: document.getElementById("meta-version").value.trim(),
           description: document.getElementById("meta-description").value.trim(),
           icon: _iconBytes,
+          thumbnail: _iconTitleName ? "img/titles1/" + _iconTitleName : "",
           saves: document.querySelector('input[name="meta-saves"]:checked')
             .value,
           update: update,
@@ -4778,6 +4787,9 @@ progress {
             description: meta.description,
             game: index.game,
             content: "",
+            // What the desktop loader's "Available online" list shows: the
+            // title image the icon was picked from, else the title art.
+            thumbnail: meta.thumbnail || "img/titles1/Book.png",
             saves: meta.saves,
             plugins: selectedBundledPlugins().map(function (p) {
               return p.name;

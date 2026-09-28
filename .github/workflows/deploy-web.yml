@@ -15,7 +15,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -64,27 +64,21 @@ jobs:
           # /notice.html fetches and renders this; it is the single source of
           # truth for the project's statement of purpose (see server.js).
           cp NOTICE.md _site/NOTICE.md
-          # Native installer stubs. deploy-stubs.yml publishes each built set
-          # as the assets of a `stub/v*` GitHub Release (a release, not a
-          # branch: github.com rejects any pushed file over 100 MB and the
-          # Linux AppImage is past that). Pages here is deployed from an
-          # artifact (upload-pages-artifact + deploy-pages), which replaces the
-          # ENTIRE published site on every run: anything not in _site is gone.
-          # Pulling the set back in is what keeps /stub/* (and the stubs.json
-          # app/create.html fetches) reachable across deploys.
+          # Native installer stubs: create.html stamps them in the browser,
+          # and GitHub serves release assets with no CORS header, so the page
+          # can only read them from its own origin. They are assets of the
+          # version release (release.yml): stubs.json and the
+          # TCOAAL-Mod-Installer-* files it names. Pages here is deployed from
+          # an artifact, which replaces the ENTIRE site on every run, so the
+          # set is copied back in on every deploy.
           #
-          # This version's own stubs when Deploy Stubs ran for it, otherwise
-          # the most recently published set, since a web-only redeploy must not
-          # drop /stub/* just because no stubs were built for its version.
+          # This version's release when it exists, otherwise the latest one:
+          # a web-only redeploy must not drop /stub/.
           mkdir -p _site/stub
-          stub_tag="stub/v${VERSION}"
-          if ! gh release view "$stub_tag" >/dev/null 2>&1; then
-            stub_tag=$(gh release list --limit 100 --json tagName,createdAt \
-              --jq '[.[] | select(.tagName | startswith("stub/v"))]
-                    | sort_by(.createdAt) | last | .tagName // empty')
-          fi
-          if [ -n "$stub_tag" ] &&
-             gh release download "$stub_tag" --dir _site/stub --clobber &&
+          tag="v${VERSION}"
+          gh release view "$tag" >/dev/null 2>&1 || tag=""
+          if gh release download $tag --dir _site/stub --clobber \
+               --pattern stubs.json --pattern 'TCOAAL-Mod-Installer-*' &&
              [ -f _site/stub/stubs.json ]; then
             # create.html refuses to stamp a stub whose sha256 does not match
             # its stubs.json entry, so a truncated asset download here would
@@ -108,6 +102,7 @@ jobs:
               if (bad) process.exit(1);
             '
           else
+            echo "::warning::No release carries stubs.json; the site has no installer stubs."
             rm -rf _site/stub
           fi
           mkdir -p _site/img
@@ -161,11 +156,3 @@ jobs:
         with:
           name: github-pages
 
-      - name: Tag the build commit
-        env:
-          TAG: web/v${{ inputs.version }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "$TAG" "$GITHUB_SHA"
-          git push origin "refs/tags/$TAG"

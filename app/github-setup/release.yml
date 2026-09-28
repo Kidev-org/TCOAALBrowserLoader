@@ -126,6 +126,9 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           INSTALLERS: ${{ steps.choices.outputs.installers }}
           OS: ${{ steps.choices.outputs.os }}
+          # Read-only use: the repository's description, the default of
+          # "description" in .config/mod.json.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           npm install --prefix .tcoaal-tools --no-save --no-package-lock sharp@0.34
@@ -143,7 +146,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          name=$(node -p 'require("./.config/mod.json").name')
+          name=$(node -p 'require("./.config/mod.json").name || ""')
+          name=${name:-${GITHUB_REPOSITORY#*/}}
           gh release create "v$VERSION" dist/* \
             --target "$GITHUB_SHA" \
             --title "$name v$VERSION" \

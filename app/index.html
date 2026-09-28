@@ -21,7 +21,14 @@
       name="apple-mobile-web-app-status-bar-style"
       content="black-translucent"
     />
-    <meta name="viewport" content="user-scalable=no" />
+    <!-- The scale is pinned at 1. With only user-scalable=no, an Android
+         WebView turned to landscape and back kept the landscape zoom: the
+         window read 757x1689 CSS px on a 426x952 page, the engine sized the
+         canvas for that and centred it in the real page, near the top. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no"
+    />
     <title>
       The Coffin of Andy and Leyley | Play TCOAAL and mods in your Browser
     </title>

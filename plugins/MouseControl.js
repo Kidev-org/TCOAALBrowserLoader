@@ -281,6 +281,43 @@
     return false;
   }
 
+  // Options by touch: a sideways drag on a row scrubs its value like a
+  // slider, right to raise it and left to lower it. A tap only ever raised a
+  // value (wrapping past the top), one step at a time, and a volume steps by
+  // 1%: going from 50% to 30% took 80 taps. Percentages move one step every
+  // few pixels, everything else (On/Off, speeds, counts) one per longer
+  // stretch. Fullscreen is left to taps: the browser only grants it to one.
+  var OPTION_FINE_STEP_PX = 4;
+  var OPTION_COARSE_STEP_PX = 60;
+
+  function optionsRowAt(x, y) {
+    if (typeof Window_Options === "undefined") return null;
+    var scene = SceneManager._scene;
+    var w = scene && scene._optionsWindow;
+    if (!(w instanceof Window_Options) || !w.isOpenAndActive()) return null;
+    var index = w.hitTest(w.canvasToLocalX(x), w.canvasToLocalY(y));
+    if (index < 0 || w.commandSymbol(index) === "fullscreen") return null;
+    return { win: w, index: index, accum: 0 };
+  }
+
+  function scrubOption(adj, dx) {
+    var w = adj.win;
+    if (!w.isOpenAndActive()) return;
+    if (w.index() !== adj.index) w.select(adj.index);
+    var step = /%\s*$/.test(String(w.statusText(adj.index)))
+      ? OPTION_FINE_STEP_PX
+      : OPTION_COARSE_STEP_PX;
+    adj.accum += dx;
+    while (adj.accum >= step) {
+      w.cursorRight(false);
+      adj.accum -= step;
+    }
+    while (adj.accum <= -step) {
+      w.cursorLeft(false);
+      adj.accum += step;
+    }
+  }
+
   TouchInput._onTouchStart = function (event) {
     for (var i = 0; i < event.changedTouches.length; i++) {
       var touch = event.changedTouches[i];
@@ -345,6 +382,11 @@
       if (Math.sqrt(dxAll * dxAll + dyAll * dyAll) > SWIPE_START_PX) {
         _swipe.isSwipe = true;
         _swipe.dir = Math.abs(dxAll) > Math.abs(dyAll) ? "h" : "v";
+        if (_swipe.dir === "h") {
+          _swipe.adjust = optionsRowAt(_swipe.x0, _swipe.y0);
+          // The whole drag counts, not only what follows the classification.
+          if (_swipe.adjust) _swipe.lastX = _swipe.x0;
+        }
       }
     }
 
@@ -364,6 +406,8 @@
         }
       }
     }
+
+    if (_swipe.adjust) scrubOption(_swipe.adjust, x - _swipe.lastX);
 
     _swipe.lastX = x;
     _swipe.lastY = y;
@@ -417,6 +461,12 @@
         return;
       }
       // Map free-walk: trigger already fired on touchstart; clear normally.
+      _baseOnTouchEnd.call(this, event);
+      return;
+    }
+
+    // A value was scrubbed (see scrubOption): that was the whole gesture.
+    if (sw.adjust) {
       _baseOnTouchEnd.call(this, event);
       return;
     }
@@ -560,8 +610,13 @@
     return true;
   }
 
-  // Check if the mouse is outside ALL visible windows in the scene
-  function isOutsideAllWindows(scene) {
+  // Check if a point (by default the mouse) is outside ALL visible windows
+  // in the scene.
+  function isOutsideAllWindows(scene, x, y) {
+    if (x === undefined) {
+      x = _mouseX;
+      y = _mouseY;
+    }
     var children = scene.children;
     if (!children) return true;
     for (var i = 0; i < children.length; i++) {
@@ -572,8 +627,8 @@
         var win = windows[j];
         if (!(win instanceof Window_Base)) continue;
         if (!win.visible || win.openness < 255) continue;
-        var lx = win.canvasToLocalX(_mouseX);
-        var ly = win.canvasToLocalY(_mouseY);
+        var lx = win.canvasToLocalX(x);
+        var ly = win.canvasToLocalY(y);
         if (lx >= 0 && ly >= 0 && lx < win.width && ly < win.height) {
           return false;
         }
@@ -629,7 +684,11 @@
     if (!TouchInput.isTriggered()) return;
     var scene = SceneManager._scene;
     if (!scene || !isPopupScene(scene)) return;
-    if (!isOutsideAllWindows(scene)) return;
+    // Where the click or tap landed, not where the mouse last was: a touch
+    // screen sends no mouse events at all (touchstart is preventDefault'ed),
+    // so the mouse position stays at 0,0 and every tap in a menu read as a
+    // tap outside it: tapping "Volume BGM 50%" closed the options.
+    if (!isOutsideAllWindows(scene, TouchInput.x, TouchInput.y)) return;
     var children = scene.children;
     if (children) {
       for (var i = 0; i < children.length; i++) {

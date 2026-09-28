@@ -624,8 +624,10 @@ async function unpack(opts) {
  * The mods the community publishes on GitHub, for the app's "Available
  * online" list: CommunityMods (app/js/libs/community-mods.js) resolves each
  * listed repository to its latest release, and this adds the icon the row
- * shows, as a data: URL (the repository's tcoaalmod.json thumbnail, else the
- * icon.png read off the start of the package).
+ * shows, as a data: URL: the first of the repository's .config/mod.json
+ * thumbnail (CommunityMods.thumbnailUrls; img/titles1/Book.png by default),
+ * its .config/icon.png, and the icon.png read off the start of the package
+ * that is an image.
  *
  * `--cache <file>` keeps what was learnt between runs: a release asset that
  * has not changed is not opened again, an icon is not fetched again, and a
@@ -642,29 +644,32 @@ function readJsonFile(file) {
   }
 }
 
-function iconMime(bytes, fallback) {
-  if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
+function iconMime(bytes) {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e) return "image/png";
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
-  if (bytes[0] === 0x47 && bytes[1] === 0x49) return "image/gif";
-  if (bytes[8] === 0x57 && bytes[9] === 0x45) return "image/webp";
-  return fallback || "image/png";
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return "image/gif";
+  if (bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42) return "image/webp";
+  return null;
 }
 
 async function communityIcon(mod) {
-  let bytes = null;
-  if (mod.thumbnail) {
+  const urls = [...new Set((mod.thumbnails || []).concat(mod.configIcon || []))];
+  const tries = urls.map((url) => async () => {
+    const res = await fetch(url);
+    return res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
+  });
+  tries.push(() => P.fetchEntry(mod.package, "icon.png", fetch));
+  for (const t of tries) {
+    let bytes = null;
     try {
-      const res = await fetch(mod.thumbnail);
-      if (res.ok) bytes = new Uint8Array(await res.arrayBuffer());
+      bytes = await t();
     } catch (e) {}
+    // A path that is not an image (an encrypted or renamed file, an HTML
+    // error page) is a miss, not an icon.
+    const mime = bytes && bytes.length && bytes.length <= ICON_MAX ? iconMime(bytes) : null;
+    if (mime) return `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
   }
-  if (!bytes) {
-    try {
-      bytes = await P.fetchEntry(mod.package, "icon.png", fetch);
-    } catch (e) {}
-  }
-  if (!bytes || !bytes.length || bytes.length > ICON_MAX) return null;
-  return `data:${iconMime(bytes)};base64,${Buffer.from(bytes).toString("base64")}`;
+  return null;
 }
 
 async function community(opts) {
@@ -714,9 +719,10 @@ async function community(opts) {
   result({ mods: out, errors: res.errors });
 }
 
-// An icon belongs to the thumbnail it came from, or to the release asset.
+// An icon belongs to where it may come from: the thumbnail candidates and
+// the release asset, which is the last resort.
 function iconKey(m) {
-  return m.thumbnail ? "t:" + m.thumbnail : "a:" + m.assetId;
+  return (m.thumbnails || []).join("|") + "|a:" + m.assetId;
 }
 
 /*

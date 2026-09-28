@@ -27,15 +27,17 @@
  *   version      the latest release's tag ("v1.0.5" -> "1.0.5")
  *   package      that release's .tcoaalmod asset (its github.com download
  *                URL, which is not rate-limited like the API)
- *   tcoaalmod.json at the root of the default branch's latest commit,
- *                optional: "name", "description", "author", and
- *                "thumbnail", a path in the repository to the list icon
+ *   .config/mod.json at the default branch's latest commit, the file the
+ *                release workflow builds from (see tools/build-mod.js):
+ *                "name" (default: the repository's name), "author" (the
+ *                owner), "description" (the repository's description) and
+ *                "thumbnail" (see thumbnailUrls), all optional
  *   id           the package's own mod id, read off the start of the package
  *                (mod.json is its first entry, so this costs a fraction of
  *                the download) and reused while the release asset is the
  *                same one (`known`)
- * Name and description fall back to the package's, the author to the
- * repository's owner.
+ * A repository with no .config/mod.json falls back to its package's name and
+ * description.
  *
  * GitHub serves release assets from a host that sends no CORS header, so
  * this runs where CORS does not apply (Node, in the mod loader). Needs
@@ -108,19 +110,53 @@
     throw last || new Error("No community mods list.");
   }
 
-  /*
-   * A file of the repository at its default branch's latest commit, by the
-   * path tcoaalmod.json gives ("thumbnail.png", "./img/icon.png"). null for a
-   * path that would leave the repository.
-   */
-  function rawUrl(repo, rel) {
-    var parts = String(rel || "").replace(/^\.\//, "").split("/");
+  var DEFAULT_THUMBNAIL = "img/titles1/Book.png";
+
+  // A path inside the repository as clean segments, or null for one that
+  // would leave it.
+  function repoPath(rel) {
+    var parts = String(rel || "")
+      .replace(/^\.\//, "")
+      .split("/");
     for (var i = 0; i < parts.length; i++) {
       if (!parts[i] || parts[i] === "." || parts[i] === ".." || parts[i].indexOf("\\") !== -1) {
         return null;
       }
     }
-    return RAW + repo + "/HEAD/" + parts.map(encodeURIComponent).join("/");
+    return parts;
+  }
+
+  /* A file of the repository at its default branch's latest commit. */
+  function rawUrl(repo, rel) {
+    var parts = repoPath(rel);
+    return parts ? RAW + repo + "/HEAD/" + parts.map(encodeURIComponent).join("/") : null;
+  }
+
+  /*
+   * Where the list icon may be, most likely first. `thumbnail` is an https
+   * URL, a path from the repository root ("/art/thumb.png"), or a path in
+   * the mod's www folder ("img/titles1/Book.png", the default: the title art
+   * every RPG Maker MV game has, which an overhaul redraws). The www folder
+   * is found the way tools/build-mod.js finds it (contentRoot): `content`'s
+   * www/ when there is one, else `content` itself, and a raw URL cannot tell
+   * which, so both are tried.
+   */
+  function thumbnailUrls(repo, cfg) {
+    var t = str(cfg.thumbnail, 300) || DEFAULT_THUMBNAIL;
+    if (/^https:\/\//i.test(t)) return [t];
+    if (/^[a-z]+:/i.test(t)) return [];
+    if (t.charAt(0) === "/") {
+      var abs = rawUrl(repo, t.replace(/^\/+/, ""));
+      return abs ? [abs] : [];
+    }
+    var content = str(cfg.content, 300).replace(/^\.?\/+|\/+$/g, "");
+    if (content === ".") content = "";
+    var base = content ? content + "/" : "";
+    return [base + "www/" + t, base + t]
+      .map(function (rel) {
+        return rawUrl(repo, rel);
+      })
+      .filter(Boolean);
   }
 
   async function resolve(repo, fetchFn, known) {
@@ -137,13 +173,14 @@
     var tag = String(rel.tag_name || "");
     var packageUrl = asset.browser_download_url;
 
-    var info = {};
+    var cfg = null;
     try {
-      var doc = await getJson(fetchFn, RAW + repo + "/HEAD/tcoaalmod.json");
-      if (doc && typeof doc === "object" && !Array.isArray(doc)) info = doc;
+      var doc = await getJson(fetchFn, RAW + repo + "/HEAD/.config/mod.json");
+      if (doc && typeof doc === "object" && !Array.isArray(doc)) cfg = doc;
     } catch (e) {
       // A repository without the file (404) is still listed, from its package.
     }
+    var info = cfg || {};
 
     var pkg;
     if (known && known.assetId === asset.id && isModId(known.id)) {
@@ -156,13 +193,20 @@
     }
     if (!isModId(pkg.id)) throw new Error("The mod in " + repo + " has no valid id.");
 
+    var owner = repo.split("/")[0];
+    var repoName = repo.split("/")[1];
+    var description = str(info.description);
+    if (!description && cfg) description = await repoDescription(repo, fetchFn);
+
     return {
       repo: repo,
       id: pkg.id,
-      name: str(info.name, 60) || pkg.name || repo.split("/")[1],
-      author: str(info.author, 60) || repo.split("/")[0],
-      description: str(info.description) || pkg.description || "",
-      thumbnail: str(info.thumbnail, 300) ? rawUrl(repo, str(info.thumbnail, 300)) : null,
+      name: str(info.name, 60) || (cfg ? "" : pkg.name) || repoName,
+      author: str(info.author, 60) || owner,
+      description: description || pkg.description || "",
+      thumbnails: thumbnailUrls(repo, info),
+      // The icon create.html's GitHub setup puts beside mod.json.
+      configIcon: RAW + repo + "/HEAD/.config/icon.png",
       version: tag.replace(/^v/i, ""),
       tag: tag,
       publishedAt: String(rel.published_at || ""),
@@ -174,6 +218,17 @@
       packageName: pkg.name || "",
       packageDescription: pkg.description || "",
     };
+  }
+
+  // The repository's own description, "" when it has none or the API
+  // cannot be reached (it is a default, never a reason to drop the row).
+  async function repoDescription(repo, fetchFn) {
+    try {
+      var r = await getJson(fetchFn, API + repo, { Accept: "application/vnd.github+json" });
+      return str(r && r.description);
+    } catch (e) {
+      return "";
+    }
   }
 
   /*
@@ -209,7 +264,9 @@
     isRepo: isRepo,
     parseList: parseList,
     fetchList: fetchList,
+    DEFAULT_THUMBNAIL: DEFAULT_THUMBNAIL,
     rawUrl: rawUrl,
+    thumbnailUrls: thumbnailUrls,
     resolve: resolve,
     resolveAll: resolveAll,
   };

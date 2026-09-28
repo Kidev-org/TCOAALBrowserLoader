@@ -32,12 +32,13 @@ folders (`.config`, `.github`, `.git`), `README`, `LICENSE`, `CHANGELOG` and
 
 | Field         | Meaning                                                                      |
 | ------------- | ---------------------------------------------------------------------------- |
-| `id`          | Lowercase letters, digits and dashes, 3 to 40 characters. Never change it.   |
-| `name`        | The mod's name, up to 60 characters.                                         |
-| `author`      | Optional.                                                                    |
-| `description` | Optional, up to 500 characters.                                              |
+| `id`          | Lowercase letters, digits and dashes, 3 to 40 characters. Never change it. Empty: made from the repository's name. |
+| `name`        | The mod's name, up to 60 characters. Empty: the repository's name.           |
+| `author`      | Empty: the repository's owner.                                               |
+| `description` | Up to 500 characters. Empty: the repository's description.                   |
 | `game`        | The game version the mod is made for, such as `3.0.13`.                      |
 | `content`     | Where to look for your files, as a path from the repository root. Empty (the default) is the root. The folder it names is used when it is laid out like the game's `www` folder, or its `www/` subfolder when it has one. |
+| `thumbnail`   | The picture the TCOAAL Mod Loader shows for your mod in its "Available online" list: a path in your `www` folder (default `img/titles1/Book.png`, the title art), a path from the repository root starting with `/`, or an `https://` link. Also the mod's icon when `.config/icon.png` is missing. |
 | `saves`       | `isolated`: the mod keeps its own saves. `shared`: the game's.               |
 | `plugins`     | Extra features to ship, by name: `MouseControl`, `ImprovedLoader`, `VirtualController`, `InteractGlint`, `SeamlessMaps`, `UnlockAll`, `SAN_AnalogMove`, `YEP_X_MessageBacklog`. Needs your own `js/plugins.js` in `www/`. |
 | `updates`     | `false` to stop installers from checking this repository for new versions.   |

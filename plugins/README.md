@@ -65,6 +65,10 @@ The order among the six otherwise does not matter.
 
 **VirtualController**
 
+- Hold the menu button (the three lines) to customize the controller: drag
+  the buttons where you want them, change their size and opacity, swap A and
+  B, or turn the arrows into an analog stick. Done keeps the layout, Reset
+  goes back to the default. The layout is remembered between sessions.
 - The quick-save button only appears when `ImprovedLoader` is installed.
 - The tap-to-continue layer during cutscenes only appears when
   `MouseControl` is NOT installed (with it, taps already reach the game).
