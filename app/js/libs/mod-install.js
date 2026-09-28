@@ -132,7 +132,19 @@
     );
   }
 
+  // The release the player sees ("3.0.13"): js/main.js carries it as
+  // GAME_VERSION, which is what create.html labels a variant with ("v3.0.13").
+  // System.json's versionId is an editor build stamp nobody would recognise.
+  function mainJsVersion(bytes) {
+    if (!bytes) return null;
+    var m = new TextDecoder()
+      .decode(bytes)
+      .match(/GAME_VERSION\s*=\s*["']([^"']+)["']/);
+    return (m && m[1].trim()) || null;
+  }
+
   async function describeBase(store) {
+    var gameVersion = mainJsVersion(await valueBytes(await store.get("js/main.js")));
     var version = null;
     var sys = await valueBytes(await store.get(STD_SYSTEM));
     if (sys) {
@@ -146,35 +158,139 @@
     var keys = await store.keys("");
     var files = 0;
     for (var i = 0; i < keys.length; i++) if (isBaseKey(keys[i])) files++;
-    return { version: version, files: files };
+    return { version: version, files: files, gameVersion: gameVersion };
   }
 
   /*
-   * The variant built against this game, or null. System.json's versionId
-   * first, then the file count, which is what tools/mod-loader.js checks.
-   * A package with ONE variant is taken when neither matches but the game is
-   * the remaster (it has a System at the hashed name): a patch against the
-   * wrong build fails loudly on its own, and a mod built on an older
-   * remaster build almost always still applies to a newer one.
+   * The game release a variant was built on, as dotted numbers ("3.0.13"),
+   * or null. create.html writes it into the label ("v3.0.13", or a parked
+   * version's own label); a fingerprint may carry it as gameVersion.
+   */
+  function variantGameVersion(variant) {
+    var base = (variant && variant.base) || {};
+    var fp = base.fingerprint || {};
+    if (fp.gameVersion) return String(fp.gameVersion);
+    var m = String(base.label || "").match(/(\d+(?:\.\d+)+)/);
+    return m ? m[1] : null;
+  }
+
+  function versionParts(v) {
+    return String(v)
+      .split(".")
+      .map(function (n) {
+        return parseInt(n, 10) || 0;
+      });
+  }
+
+  // How far apart two releases are, compared part by part from the major: a
+  // different major outweighs any patch distance.
+  function versionDistance(a, b) {
+    var pa = versionParts(a);
+    var pb = versionParts(b);
+    var n = Math.max(pa.length, pb.length);
+    var d = [];
+    for (var i = 0; i < n; i++) d.push(Math.abs((pa[i] || 0) - (pb[i] || 0)));
+    return d;
+  }
+
+  function compareDistance(da, db) {
+    for (var i = 0; i < Math.max(da.length, db.length); i++) {
+      var x = da[i] || 0;
+      var y = db[i] || 0;
+      if (x !== y) return x - y;
+    }
+    return 0;
+  }
+
+  /*
+   * Every variant, in the order to try them on this game. The ones built on
+   * this exact game come first: System.json's versionId, then the file count
+   * (what tools/mod-loader.js checks). Then the rest, nearest release first,
+   * those whose release is unknown last. None is refused here: whether a
+   * variant fits a game it was not built on is decided by trying it
+   * (checkVariant), before anything is written.
+   */
+  function rankVariants(manifest, base) {
+    var variants = ((manifest && manifest.variants) || []).slice();
+    function exactness(v) {
+      var fp = (v.base && v.base.fingerprint) || {};
+      if (base.version && fp.version != null && String(fp.version) === base.version) {
+        return 0;
+      }
+      if (fp.files === base.files) return 1;
+      return 2;
+    }
+    var mine = base.gameVersion;
+    return variants
+      .map(function (v, i) {
+        var gv = variantGameVersion(v);
+        return {
+          v: v,
+          i: i,
+          exact: exactness(v),
+          dist: mine && gv ? versionDistance(mine, gv) : null,
+        };
+      })
+      .sort(function (a, b) {
+        if (a.exact !== b.exact) return a.exact - b.exact;
+        if (a.dist && b.dist) {
+          var c = compareDistance(a.dist, b.dist);
+          if (c) return c;
+        } else if (a.dist || b.dist) {
+          return a.dist ? -1 : 1;
+        }
+        return a.i - b.i;
+      })
+      .map(function (x) {
+        return x.v;
+      });
+  }
+
+  /*
+   * The variant built against this game, or null: the exact matches of
+   * rankVariants only. Kept for callers that must not guess.
    */
   function selectVariant(manifest, base) {
-    var variants = (manifest && manifest.variants) || [];
-    if (!variants.length) return null;
-    var i, fp;
-    if (base.version) {
-      for (i = 0; i < variants.length; i++) {
-        fp = (variants[i].base && variants[i].base.fingerprint) || {};
-        if (fp.version != null && String(fp.version) === base.version) {
-          return variants[i];
-        }
+    var ranked = rankVariants(manifest, base);
+    if (!ranked.length) return null;
+    var fp = (ranked[0].base && ranked[0].base.fingerprint) || {};
+    var exact =
+      (base.version && fp.version != null && String(fp.version) === base.version) ||
+      fp.files === base.files;
+    return exact ? ranked[0] : null;
+  }
+
+  /*
+   * What a player is told when no variant fits their game: which release the
+   * mod needs, in the words they would look for in Steam's betas list.
+   * `short` fits a Mods-menu row; `message` says the rest.
+   */
+  function versionRequirement(manifest, base) {
+    var seen = Object.create(null);
+    var required = [];
+    (manifest.variants || []).forEach(function (v) {
+      var gv = variantGameVersion(v);
+      if (gv && !seen[gv]) {
+        seen[gv] = true;
+        required.push(gv);
       }
-    }
-    for (i = 0; i < variants.length; i++) {
-      fp = (variants[i].base && variants[i].base.fingerprint) || {};
-      if (fp.files === base.files) return variants[i];
-    }
-    if (variants.length === 1 && base.version) return variants[0];
-    return null;
+    });
+    var name = manifest.name || manifest.id;
+    var short;
+    if (!required.length) short = "Needs another game version";
+    else if (required.length === 1) short = "v" + required[0] + " is required";
+    else short = "v" + required.slice(0, -1).join(", v") + " or v" +
+      required[required.length - 1] + " is required";
+    var message =
+      '"' + name + '" does not work with your version of the game' +
+      (base.gameVersion ? " (v" + base.gameVersion + ")" : "") + ". " +
+      (required.length ? short + "." : "It was built for: " +
+        (manifest.variants || []).map(labelOf).join(", ") + ".");
+    var err = new Error(message);
+    err.code = "GAME_VERSION";
+    err.required = required;
+    err.short = short;
+    return err;
   }
 
   /*
@@ -451,83 +567,160 @@
     if (!base.files) {
       throw new Error("Import your copy of the game first: this mod is applied on top of it.");
     }
-    var variant = selectVariant(manifest, base);
-    if (!variant) {
-      throw new Error(
-        '"' + (manifest.name || id) + '" does not support your version of the game. ' +
-          "It was built for: " + manifest.variants.map(labelOf).join(", ") + ".",
-      );
+    var prefix = "mod:" + id + ":";
+    // A download already filled the first half of the bar.
+    var offset = downloaded ? 0.5 : 0;
+
+    // Reads the files one variant is made of. `own(rel)` answers with what
+    // this install has produced for rel so far (null when nothing): `from`
+    // is read out of the tree as it stands, the install's own earlier write
+    // first, the base game otherwise, like the native loader.
+    // A fault of the package itself, which no game version would fix: it is
+    // reported as it is rather than as a version mismatch.
+    function packageFault(message) {
+      var e = new Error(message);
+      e.packageFault = true;
+      return e;
     }
 
-    var entries = (variant.files || []).filter(function (f) {
-      return f.type !== "delete";
-    });
-    var prefix = "mod:" + id + ":";
+    function makeApplier(variant, own, stats) {
+      async function sourceBytes(f) {
+        var src = f.from || f.rel;
+        if (f.from && !safeRel(f.from)) {
+          throw packageFault('Refusing an unsafe path in "' + id + '": ' + f.from);
+        }
+        var raw = (await own(src)) || (await valueBytes(await store.get(src)));
+        if (!raw) {
+          throw new Error(
+            '"' + (manifest.name || id) + '" needs ' + src + " for " + f.rel +
+              ", which is missing from your game. Your copy does not match " +
+              "the build this mod was made for (" + labelOf(variant) + ").",
+          );
+        }
+        return C().dekit(raw, src);
+      }
+
+      return async function plainOf(f) {
+        if (!safeRel(f.rel)) {
+          throw packageFault('Refusing an unsafe path in "' + id + '": ' + f.rel);
+        }
+        if (f.type === "verbatim") {
+          var body = await zip.read(f.payload);
+          if (!body) {
+            throw packageFault('"' + id + '" is incomplete: missing ' + f.payload + " for " + f.rel + ".");
+          }
+          stats.verbatim++;
+          // A payload is stored as the modder shipped it; plain unless it
+          // arrived in a TCOAAL container, which is decoded here like any
+          // other game file.
+          return C().dekit(body, f.rel);
+        }
+        if (f.type === "copy") {
+          stats.copied++;
+          return sourceBytes(f);
+        }
+        if (f.type === "patch") {
+          var srcPlain = await sourceBytes(f);
+          var out;
+          try {
+            var doc = JSON.parse(new TextDecoder().decode(srcPlain));
+            out = J().apply(doc, f.ops || []);
+          } catch (e) {
+            throw new Error(
+              '"' + (manifest.name || id) + '" cannot patch ' + f.rel +
+                ": your copy of that file is not the one it was made for.",
+            );
+          }
+          stats.patched++;
+          return new TextEncoder().encode(JSON.stringify(out));
+        }
+        throw packageFault('Unknown entry type "' + f.type + '" for ' + f.rel + ".");
+      };
+    }
+
+    function entriesOf(variant) {
+      return (variant.files || []).filter(function (f) {
+        return f.type !== "delete";
+      });
+    }
+
+    /*
+     * Whether `variant` applies to this game, WITHOUT writing anything:
+     * every copy and patch is replayed against the player's files and every
+     * payload is looked up. Resolves to null when it applies, else to the
+     * reason. This is what lets a mod built on another release be tried at
+     * all, and what makes a refusal leave the store exactly as it was (the
+     * installed version of an update included) instead of half-written.
+     * A payload is only read when a later entry takes it as its `from`;
+     * only those outputs are held.
+     */
+    async function checkVariant(variant) {
+      var entries = entriesOf(variant);
+      var wanted = Object.create(null);
+      entries.forEach(function (f) {
+        wanted[f.from || f.rel] = true;
+      });
+      var made = new Map();
+      var plainOf = makeApplier(
+        variant,
+        async function (rel) {
+          return made.get(rel) || null;
+        },
+        { written: 0, copied: 0, patched: 0, verbatim: 0, deleted: 0 },
+      );
+      try {
+        for (var n = 0; n < entries.length; n++) {
+          var f = entries[n];
+          if (f.type === "verbatim" && !wanted[f.rel]) {
+            if (!safeRel(f.rel)) {
+              throw packageFault('Refusing an unsafe path in "' + id + '": ' + f.rel);
+            }
+            if (!zip.has(f.payload)) {
+              throw packageFault('"' + id + '" is incomplete: missing ' + f.payload + " for " + f.rel + ".");
+            }
+            continue;
+          }
+          var out = await plainOf(f);
+          if (wanted[f.rel]) made.set(f.rel, out);
+        }
+      } catch (e) {
+        if (e && e.packageFault) throw e;
+        return String((e && e.message) || e);
+      }
+      return null;
+    }
+
+    var ranked = rankVariants(manifest, base);
+    var variant = null;
+    var problems = [];
+    for (var vi = 0; vi < ranked.length && !variant; vi++) {
+      progress(offset, "Checking your game...");
+      var problem = await checkVariant(ranked[vi]);
+      if (problem) problems.push(labelOf(ranked[vi]) + ": " + problem);
+      else variant = ranked[vi];
+    }
+    if (!variant) {
+      var refusal = versionRequirement(manifest, base);
+      refusal.problems = problems;
+      throw refusal;
+    }
+
+    var entries = entriesOf(variant);
     var written = Object.create(null);
     var pending = Object.create(null);
     var stats = { written: 0, copied: 0, patched: 0, verbatim: 0, deleted: 0 };
     stats.deleted = (variant.files || []).length - entries.length;
-    // A download already filled the first half of the bar.
-    var offset = downloaded ? 0.5 : 0;
-
-    async function sourceBytes(f) {
-      var src = f.from || f.rel;
-      if (f.from && !safeRel(f.from)) {
-        throw new Error('Refusing an unsafe path in "' + id + '": ' + f.from);
-      }
-      // This install's own write wins over the base: still in the batch
-      // being assembled, or already flushed under the mod's prefix.
-      var raw = pending[src]
-        ? pending[src]
-        : written[src]
-          ? await valueBytes(await store.get(prefix + src))
-          : await valueBytes(await store.get(src));
-      if (!raw) {
-        throw new Error(
-          '"' + (manifest.name || id) + '" needs ' + src + " for " + f.rel +
-            ", which is missing from your game. Your copy does not match " +
-            "the build this mod was made for (" + labelOf(variant) + ").",
-        );
-      }
-      return C().dekit(raw, src);
-    }
-
-    async function plainOf(f) {
-      if (!safeRel(f.rel)) {
-        throw new Error('Refusing an unsafe path in "' + id + '": ' + f.rel);
-      }
-      if (f.type === "verbatim") {
-        var body = await zip.read(f.payload);
-        if (!body) {
-          throw new Error('"' + id + '" is incomplete: missing ' + f.payload + " for " + f.rel + ".");
-        }
-        stats.verbatim++;
-        // A payload is stored as the modder shipped it; plain unless it
-        // arrived in a TCOAAL container, which is decoded here like any
-        // other game file.
-        return C().dekit(body, f.rel);
-      }
-      if (f.type === "copy") {
-        stats.copied++;
-        return sourceBytes(f);
-      }
-      if (f.type === "patch") {
-        var srcPlain = await sourceBytes(f);
-        var out;
-        try {
-          var doc = JSON.parse(new TextDecoder().decode(srcPlain));
-          out = J().apply(doc, f.ops || []);
-        } catch (e) {
-          throw new Error(
-            '"' + (manifest.name || id) + '" cannot patch ' + f.rel +
-              ": your copy of that file is not the one it was made for.",
-          );
-        }
-        stats.patched++;
-        return new TextEncoder().encode(JSON.stringify(out));
-      }
-      throw new Error('Unknown entry type "' + f.type + '" for ' + f.rel + ".");
-    }
+    // This install's own write wins over the base: still in the batch being
+    // assembled, or already flushed under the mod's prefix.
+    var plainOf = makeApplier(
+      variant,
+      async function (rel) {
+        if (pending[rel]) return pending[rel];
+        if (written[rel]) return valueBytes(await store.get(prefix + rel));
+        return null;
+      },
+      stats,
+    );
 
     var total = entries.length;
     var files = [];
@@ -659,6 +852,8 @@
     idbStore: idbStore,
     fetchBytes: fetchBytes,
     selectVariant: selectVariant,
+    rankVariants: rankVariants,
+    variantGameVersion: variantGameVersion,
     detectLangFile: detectLangFile,
     mayBeLangFile: mayBeLangFile,
     pickLangData: pickLangData,

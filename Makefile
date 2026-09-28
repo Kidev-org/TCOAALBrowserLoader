@@ -12,8 +12,8 @@
 #   make distclean  clean + the caches and downloaded dependencies
 #
 # Tests are plain node scripts: node tools/test.js, tools/test-create.js,
-# tools/test-mod-loader.js, tools/test-mod-apply.js, and
-# tools/test-stub-stamp.js <stub>.
+# tools/test-mod-loader.js, tools/test-mod-apply.js, tools/test-mod-install.js,
+# tools/test-sw.js, tools/test-build-mod.js, and tools/test-stub-stamp.js <stub>.
 
 NODE ?= node
 NPX ?= npx

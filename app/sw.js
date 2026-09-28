@@ -140,6 +140,10 @@ const APP_SHELL = [
   "/js/libs/pe-resources.js",
   "/js/libs/icns.js",
   "/js/libs/stub-stamp.js",
+  "/js/libs/bundled-plugins.js",
+  // The GitHub setup create.html zips up (workflow + its README).
+  "/github-setup/release.yml",
+  "/github-setup/README.md",
 ];
 
 async function precacheShell() {
@@ -296,7 +300,12 @@ async function serveModAsset(logicalPath, request, preferNetwork) {
   // assets.
   async function fromIdb() {
     if (!db) return null;
-    const value = await getAsset(db, "mod:" + modId + ":" + relPath);
+    let value;
+    try {
+      value = await getAsset(db, "mod:" + modId + ":" + relPath);
+    } catch {
+      return null;
+    }
     if (value === null) return null;
     const buf =
       value instanceof ArrayBuffer
@@ -578,27 +587,99 @@ function openDB() {
       // stop a running SW, so the delete only completes once the page unloads
       // (a manual refresh), leaving the "Storage busy" error and ~700MB still
       // occupied until then. Mirrors the loader's own openDB/onversionchange.
-      _db.onversionchange = () => {
+      const conn = _db;
+      conn.onversionchange = () => {
         try {
-          _db.close();
+          conn.close();
         } catch (e) {}
-        _db = null;
+        if (_db === conn) _db = null;
       };
-      resolve(_db);
+      // The browser closes a connection on its own when the backing store
+      // fails (Chrome on Android does under storage or memory pressure).
+      // Every later transaction on it throws InvalidStateError, so a cached
+      // handle that is never dropped fails every asset until the worker
+      // restarts.
+      conn.onclose = () => {
+        if (_db === conn) _db = null;
+      };
+      resolve(conn);
     };
     req.onerror = (e) => reject(e.target.error);
   });
 }
 
-function getAsset(db, key) {
-  return new Promise((resolve) => {
-    const req = db
-      .transaction(STORE_NAME, "readonly")
-      .objectStore(STORE_NAME)
-      .get(key);
+/**
+ * A read that FAILED, as opposed to a key that is not there. The two used to
+ * be the same `null`, and a null sends the request on down the lookup chain
+ * to the network, which has no game files: the page got a 404 for an asset
+ * sitting in IDB. AudioStreaming never retries a 4xx and the image loader
+ * gives up after three quick retries, so a transient read error (a closed
+ * connection, Chrome's "Failed to read large IndexedDB value" under memory
+ * pressure) became a sound that never played or a sprite left blank.
+ * serveFromIDB answers this with a 503, which both loaders retry.
+ */
+class IdbReadError extends Error {
+  constructor(key, cause) {
+    super(
+      "IndexedDB read failed for " +
+        key +
+        (cause && cause.message ? ": " + cause.message : ""),
+    );
+    this.name = "IdbReadError";
+    this.key = key;
+    this.cause = cause;
+  }
+}
+
+// Pauses between attempts of one read; its length + 1 is the attempt count.
+const IDB_READ_RETRY_DELAYS_MS = [50, 200];
+
+function getAssetOnce(db, key) {
+  return new Promise((resolve, reject) => {
+    let tx;
+    try {
+      tx = db.transaction(STORE_NAME, "readonly");
+    } catch (e) {
+      reject(e);
+      return;
+    }
+    const req = tx.objectStore(STORE_NAME).get(key);
     req.onsuccess = () => resolve(req.result ?? null);
-    req.onerror = () => resolve(null);
+    req.onerror = (e) => {
+      // Handled here: without it the error also aborts the transaction and
+      // surfaces a second time as an uncaught error on the connection.
+      e.preventDefault();
+      reject(req.error || new Error("request failed"));
+    };
+    tx.onabort = () => reject(tx.error || new Error("transaction aborted"));
   });
+}
+
+/**
+ * The value stored under `key`, or null when there is none. Throws
+ * IdbReadError when the store could not be read after a few attempts; a
+ * connection found closed is dropped and reopened between attempts.
+ */
+async function getAsset(db, key) {
+  let lastError = null;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await getAssetOnce(db, key);
+    } catch (e) {
+      lastError = e;
+    }
+    if (attempt >= IDB_READ_RETRY_DELAYS_MS.length) break;
+    if (lastError && lastError.name === "InvalidStateError" && _db === db) {
+      _db = null;
+    }
+    await new Promise((r) => setTimeout(r, IDB_READ_RETRY_DELAYS_MS[attempt]));
+    try {
+      db = await openDB();
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw new IdbReadError(key, lastError);
 }
 
 function putAsset(db, key, value) {
@@ -689,19 +770,28 @@ async function importedModEntry(db, modId) {
  * Case-insensitive IDB lookup cache.
  * Maps lowercase IDB key -> actual IDB key for directories already scanned.
  * Populated lazily per directory prefix on first case-insensitive miss.
+ * `_ciScannedDirs` maps each prefix to its scan's promise: a request arriving
+ * while the scan still runs awaits it rather than reading a half-filled map
+ * and reporting a miss for a file that is there.
  */
 const _ciCache = new Map();
-const _ciScannedDirs = new Set();
+const _ciScannedDirs = new Map();
 
 /**
  * Scan all IDB keys under a directory prefix and populate the CI cache.
  * E.g. prefix "audio/se/" scans all keys starting with "audio/se/".
- * Also handles mod-prefixed keys like "mod:id:audio/se/".
+ * Also handles mod-prefixed keys like "mod:id:audio/se/". A scan that fails
+ * is forgotten so the next lookup tries again.
  */
 function _ciScanDir(db, dirPrefix) {
-  if (_ciScannedDirs.has(dirPrefix)) return Promise.resolve();
-  _ciScannedDirs.add(dirPrefix);
-  return new Promise((resolve) => {
+  const pending = _ciScannedDirs.get(dirPrefix);
+  if (pending) return pending;
+  let ok = true;
+  const scan = new Promise((resolve) => {
+    const failed = () => {
+      ok = false;
+      resolve();
+    };
     try {
       const tx = db.transaction(STORE_NAME, "readonly");
       const range = IDBKeyRange.bound(
@@ -720,11 +810,22 @@ function _ciScanDir(db, dirPrefix) {
           resolve();
         }
       };
-      req.onerror = () => resolve();
+      req.onerror = (e) => {
+        e.preventDefault();
+        failed();
+      };
+      tx.onabort = failed;
     } catch {
-      resolve();
+      failed();
     }
   });
+  _ciScannedDirs.set(dirPrefix, scan);
+  scan.then(() => {
+    if (!ok && _ciScannedDirs.get(dirPrefix) === scan) {
+      _ciScannedDirs.delete(dirPrefix);
+    }
+  });
+  return scan;
 }
 
 /**
@@ -766,16 +867,21 @@ async function serveModIconOverride(logicalPath) {
   let db;
   try {
     db = await openDB();
+    await ensureActiveModLoaded(db);
+    await ensureActiveLangLoaded(db);
   } catch {
     return null;
   }
-  await ensureActiveModLoaded(db);
-  await ensureActiveLangLoaded(db);
   // Active language overlay wins over the overhaul, mirroring asset priority.
   for (const overlayId of [_activeLang, _activeMod]) {
     if (!overlayId) continue;
     const modPrefix = "mod:" + overlayId + ":";
-    const hit = await getAssetCI(db, modPrefix + modRel);
+    let hit;
+    try {
+      hit = await getAssetCI(db, modPrefix + modRel);
+    } catch {
+      return null;
+    }
     if (hit === null) continue;
     const keyForDecrypt = hit.actualKey.substring(modPrefix.length);
     const decrypted = dekit(hit.value, keyForDecrypt);
@@ -1609,6 +1715,7 @@ self.addEventListener("message", (event) => {
 
   if (data.type === "setActiveMod") {
     _activeMod = data.id || null;
+    clearDecodedCache();
     // Mark as resolved so parallel fetches skip the IDB read.
     _activeModLoadPromise = Promise.resolve();
     // Persist to IDB
@@ -1627,6 +1734,7 @@ self.addEventListener("message", (event) => {
 
   if (data.type === "setActiveLang") {
     _activeLang = data.id || null;
+    clearDecodedCache();
     _activeLangLoadPromise = Promise.resolve();
     openDB()
       .then((db) => {
@@ -1717,6 +1825,7 @@ self.addEventListener("message", (event) => {
     // case-insensitive lookup under it misses until the worker restarts.
     _ciCache.clear();
     _ciScannedDirs.clear();
+    clearDecodedCache();
     _drmCache = null;
     _drmAttempted = false;
     const ack = openDB()
@@ -1740,25 +1849,40 @@ self.addEventListener("message", (event) => {
  */
 function ensureActiveModLoaded(db) {
   if (_activeModLoadPromise) return _activeModLoadPromise;
-  _activeModLoadPromise = (async () => {
-    try {
-      const val = await getAsset(db, "__active_mod__");
-      if (val && typeof val === "string") _activeMod = val;
-    } catch {}
+  const load = (async () => {
+    const val = await getAsset(db, "__active_mod__");
+    if (val && typeof val === "string") _activeMod = val;
   })();
-  return _activeModLoadPromise;
+  _activeModLoadPromise = load;
+  forgetIfFailed(load, () => {
+    if (_activeModLoadPromise === load) _activeModLoadPromise = null;
+  });
+  return load;
+}
+
+/**
+ * Run `forget` when `promise` rejects. The one-shot loaders below share one
+ * promise among concurrent requests; a read that failed has to be retried by
+ * the next request, not remembered as "nothing stored" (which served the base
+ * game's files in place of the active mod's for the worker's whole life).
+ * The rejection itself still reaches the caller, whose request answers 503.
+ */
+function forgetIfFailed(promise, forget) {
+  promise.catch(forget);
 }
 
 /** Load the active language overlay from IDB (once, on first request). */
 function ensureActiveLangLoaded(db) {
   if (_activeLangLoadPromise) return _activeLangLoadPromise;
-  _activeLangLoadPromise = (async () => {
-    try {
-      const val = await getAsset(db, "__active_lang__");
-      if (val && typeof val === "string") _activeLang = val;
-    } catch {}
+  const load = (async () => {
+    const val = await getAsset(db, "__active_lang__");
+    if (val && typeof val === "string") _activeLang = val;
   })();
-  return _activeLangLoadPromise;
+  _activeLangLoadPromise = load;
+  forgetIfFailed(load, () => {
+    if (_activeLangLoadPromise === load) _activeLangLoadPromise = null;
+  });
+  return load;
 }
 
 /**
@@ -1768,14 +1892,16 @@ function ensureActiveLangLoaded(db) {
  */
 function ensureOldHashMapLoaded(db) {
   if (_oldHashMapLoadPromise) return _oldHashMapLoadPromise;
-  _oldHashMapLoadPromise = (async () => {
-    try {
-      const val = await getAsset(db, "__oldhashmap__");
-      if (val && typeof val === "object") _oldHashMap = val;
-    } catch {}
+  const load = (async () => {
+    const val = await getAsset(db, "__oldhashmap__");
+    if (val && typeof val === "object") _oldHashMap = val;
     return _oldHashMap;
   })();
-  return _oldHashMapLoadPromise;
+  _oldHashMapLoadPromise = load;
+  forgetIfFailed(load, () => {
+    if (_oldHashMapLoadPromise === load) _oldHashMapLoadPromise = null;
+  });
+  return load;
 }
 
 /**
@@ -2047,7 +2173,10 @@ self.addEventListener("fetch", (event) => {
     logicalPath === "js/libs/mod-diff-worker.js" ||
     logicalPath === "js/libs/pe-resources.js" ||
     logicalPath === "js/libs/icns.js" ||
-    logicalPath === "js/libs/stub-stamp.js"
+    logicalPath === "js/libs/stub-stamp.js" ||
+    logicalPath === "js/libs/bundled-plugins.js" ||
+    logicalPath === "github-setup/release.yml" ||
+    logicalPath === "github-setup/README.md"
   ) {
     // Normalise "/" -> "/index.html" for cache lookups so a boot from the
     // bare origin finds the same cached entry the SW pre-populated.
@@ -2116,16 +2245,145 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  event.respondWith(serveFromIDB(logicalPath, event.request));
+  event.respondWith(serveGameFile(logicalPath, event.request));
 });
 
-async function serveFromIDB(logicalPath, request) {
-  let db;
-  try {
-    db = await openDB();
-  } catch {
-    return fetch(request);
+// Decoded game media, held in this worker's MEMORY and nowhere else. Every
+// playSe builds a fresh WebAudio, so each footstep, door and text blip used to
+// be a whole IDB read + dekit, queued behind whatever the scene was loading;
+// on a slow phone that is how a sound ended up late or never. Nothing here is
+// written anywhere: the imported files stay in IDB exactly as imported and
+// this map dies with the worker (see the decode-on-the-fly rule in sw.js's
+// header). Entries are keyed by the overlay context as well as the path, and
+// expire, so a translation updated in the background is picked up.
+const DECODED_CACHE_MAX_BYTES = 48 * 1024 * 1024;
+const DECODED_CACHE_MAX_ENTRY_BYTES = 4 * 1024 * 1024;
+const DECODED_CACHE_TTL_MS = 10 * 60 * 1000;
+const DECODED_CACHE_PATH_RE = /^(img|audio|movies)\//i;
+const _decodedCache = new Map(); // key -> {bytes, type, at}; oldest first
+const _decodedInflight = new Map(); // key -> Promise<{bytes, type} | null>
+let _decodedCacheBytes = 0;
+// Bumped on every clear, so a read that started before a mod switch or a
+// reinstall does not put what it read back afterwards.
+let _decodedCacheEpoch = 0;
+
+function clearDecodedCache() {
+  _decodedCache.clear();
+  _decodedInflight.clear();
+  _decodedCacheBytes = 0;
+  _decodedCacheEpoch++;
+}
+
+function decodedCacheGet(key) {
+  const hit = _decodedCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > DECODED_CACHE_TTL_MS) {
+    _decodedCache.delete(key);
+    _decodedCacheBytes -= hit.bytes.byteLength;
+    return null;
   }
+  // Re-insert: Map order is the LRU order.
+  _decodedCache.delete(key);
+  _decodedCache.set(key, hit);
+  return hit;
+}
+
+function decodedCachePut(key, bytes, type) {
+  if (bytes.byteLength > DECODED_CACHE_MAX_ENTRY_BYTES) return;
+  const old = _decodedCache.get(key);
+  if (old) {
+    _decodedCache.delete(key);
+    _decodedCacheBytes -= old.bytes.byteLength;
+  }
+  _decodedCache.set(key, { bytes, type, at: Date.now() });
+  _decodedCacheBytes += bytes.byteLength;
+  for (const [k, v] of _decodedCache) {
+    if (_decodedCacheBytes <= DECODED_CACHE_MAX_BYTES) break;
+    _decodedCache.delete(k);
+    _decodedCacheBytes -= v.bytes.byteLength;
+  }
+}
+
+/**
+ * What the page gets when the store could not be read. A network error, not
+ * a status: every loader the game has retries one (the <img> loader through
+ * ResourceHandler, AudioStreaming's fetch, DataManager's XHR through its map
+ * loader), while DataManager ignores any HTTP status >= 400 outright and
+ * AudioStreaming gives up on a 4xx. A copy the network does have (server.js
+ * in development) is still served.
+ */
+async function storageUnavailable(logicalPath, request, err) {
+  console.warn("[sw] storage read failed for", logicalPath, err);
+  try {
+    const resp = await fetch(request);
+    if (resp.ok) return resp;
+  } catch {}
+  return Response.error();
+}
+
+/**
+ * serveFromIDB behind the decoded-media cache and a shared in-flight read.
+ * Only answers serveFromIDB built itself (type "default") are kept: a network
+ * pass-through is not ours to hold, and a 404 must stay retryable.
+ */
+async function serveGameFile(logicalPath, request) {
+  const fail = (err) => storageUnavailable(logicalPath, request, err);
+  if (!DECODED_CACHE_PATH_RE.test(logicalPath)) {
+    return serveFromIDB(logicalPath, request).catch(fail);
+  }
+  try {
+    const db = await openDB();
+    await ensureActiveModLoaded(db);
+    await ensureActiveLangLoaded(db);
+  } catch (err) {
+    return fail(err);
+  }
+  const key = (_activeLang || "") + "|" + (_activeMod || "") + "|" + logicalPath;
+  const respond = (entry) =>
+    new Response(entry.bytes, {
+      status: 200,
+      headers: { "Content-Type": entry.type },
+    });
+
+  const hit = decodedCacheGet(key);
+  if (hit) return respond(hit);
+
+  let read = _decodedInflight.get(key);
+  let owner = false;
+  if (!read) {
+    owner = true;
+    const epoch = _decodedCacheEpoch;
+    read = serveFromIDB(logicalPath, request).then(async (resp) => {
+      if (resp.status !== 200 || resp.type !== "default") return { resp };
+      const entry = {
+        bytes: new Uint8Array(await resp.arrayBuffer()),
+        type: resp.headers.get("Content-Type") || mimeFor(logicalPath),
+      };
+      if (epoch === _decodedCacheEpoch) decodedCachePut(key, entry.bytes, entry.type);
+      return { entry };
+    });
+    _decodedInflight.set(key, read);
+    read
+      .catch(() => {})
+      .then(() => {
+        if (_decodedInflight.get(key) === read) _decodedInflight.delete(key);
+      });
+  }
+  try {
+    const out = await read;
+    if (out.entry) return respond(out.entry);
+    // A network pass-through has one body: the request that started the read
+    // takes it, anyone who joined asks again on their own.
+    return owner ? out.resp : serveFromIDB(logicalPath, request);
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+async function serveFromIDB(logicalPath, request) {
+  // Throws when the store cannot be opened or read: the caller answers that
+  // as a storage failure, never as a miss sent on to the network.
+  const db = await openDB();
 
   // Ensure we know the active mod + language (loads once from IDB).
   await ensureActiveModLoaded(db);

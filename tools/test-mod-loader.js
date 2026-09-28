@@ -64,6 +64,7 @@ function loadLibs() {
     "app/js/libs/json-diff.js",
     "app/js/libs/mod-package.js",
     "app/js/libs/mod-diff-worker.js",
+    "app/js/libs/community-mods.js",
   ]) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, rel), "utf8"), ctx);
   }
@@ -261,9 +262,14 @@ function fetchStubEnv(tmp, map) {
       "    ok: true,\n" +
       "    status: 200,\n" +
       '    headers: { get: (k) => (String(k).toLowerCase() === "content-length" ? String(b.length) : null) },\n' +
-      "    body: (async function* () {\n" +
-      "      for (let i = 0; i < b.length; i += 4096) yield b.subarray(i, Math.min(i + 4096, b.length));\n" +
-      "    })(),\n" +
+      // A ReadableStream: iterated by the download, read with getReader()
+      // where only the start of a package is wanted (ModPackage.fetchEntry).
+      "    body: new ReadableStream({\n" +
+      "      start(c) {\n" +
+      "        for (let i = 0; i < b.length; i += 4096) c.enqueue(new Uint8Array(b.subarray(i, Math.min(i + 4096, b.length))));\n" +
+      "        c.close();\n" +
+      "      },\n" +
+      "    }),\n" +
       "    async arrayBuffer() {\n" +
       "      return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);\n" +
       "    },\n" +
@@ -571,20 +577,36 @@ function fetchStubEnv(tmp, map) {
     );
   });
 
-  await test("a mod built for another build is refused", async () => {
+  await test("a mod built on another build installs when it applies to this one", async () => {
     const otherFp = await D.fingerprint(D.memSource(base));
     otherFp.version = "39900";
     otherFp.files = 999;
+    const other = path.join(tmp, "other.tcoaalmod");
+    fs.writeFileSync(other, await buildMod(base, treeA(base), otherFp, { id: "mod-c", name: "Mod C" }));
+    const r = runJson(["--install", other, "--game", game]);
+    eq(r.id, "mod-c");
+    const state = JSON.parse(fs.readFileSync(path.join(game, "addons", "state.json"), "utf8"));
+    eq(state.mods["mod-c"].variant, 0, "the checked variant is recorded for the profile");
+    runJson(["--uninstall", "mod-c", "--game", game]);
+  });
+
+  await test("a mod that does not fit this game says which version it needs, and installs nothing", async () => {
+    const theirs = new Map(base);
+    theirs.set("data/Extra.json", enc(JSON.stringify({ a: 1 })));
+    const modded = new Map(theirs);
+    modded.set("data/Extra.json", enc(JSON.stringify({ a: 2 })));
+    const otherFp = await D.fingerprint(D.memSource(theirs));
     const bad = path.join(tmp, "bad.tcoaalmod");
-    fs.writeFileSync(bad, await buildMod(base, treeA(base), otherFp, { id: "mod-c", name: "Mod C" }));
+    fs.writeFileSync(bad, await buildMod(theirs, modded, otherFp, { id: "mod-d", name: "Mod D", mode: "overlay" }));
     let threw = false;
     try {
       run(["--install", bad, "--game", game], { stdio: "pipe" });
     } catch (e) {
       threw = true;
-      assert(/does not support your version/.test(String(e.stderr)), "wrong error: " + e.stderr);
+      assert(/"Mod D" needs version 3\.0\.8 of the game/.test(String(e.stderr)), "wrong error: " + e.stderr);
     }
-    assert(threw, "installing a mod for another build must fail");
+    assert(threw, "a mod that cannot apply must be refused");
+    assert(!fs.existsSync(path.join(game, "addons", "mod-d")), "nothing of it was written");
   });
 
   await test("a game still modded by the old in-place installer is refused", () => {
@@ -1033,6 +1055,79 @@ function fetchStubEnv(tmp, map) {
     }
     assert(!now.has("data/System.json"), "the mod's file was written into the player's game");
   });
+
+  // The community mods: GitHub repositories listed in app/community-mods.json,
+  // offered by the app beside the installed mods. GitHub is the fetch stub.
+  {
+    const list = path.join(tmp, "community.json");
+    fs.writeFileSync(
+      list,
+      JSON.stringify({ format: "tcoaal-community-mods/1", repos: ["octo/one", "octo/none", "bad repo"] }),
+    );
+    const asset = "https://github.com/octo/one/releases/download/v2.1.0/mod-a-2.1.0.tcoaalmod";
+    const rel = path.join(tmp, "release-one.json");
+    fs.writeFileSync(
+      rel,
+      JSON.stringify({
+        tag_name: "v2.1.0",
+        published_at: "2026-09-01T00:00:00Z",
+        assets: [
+          { id: 7, name: "notes.txt", browser_download_url: "https://github.com/octo/one/x.txt" },
+          { id: 42, name: "mod-a-2.1.0.tcoaalmod", size: 1234, browser_download_url: asset },
+        ],
+      }),
+    );
+    const info = path.join(tmp, "tcoaalmod.json");
+    fs.writeFileSync(info, JSON.stringify({ name: "Mod A, the community cut", thumbnail: "./art/thumb.png" }));
+    const thumb = path.join(tmp, "thumb.png");
+    fs.writeFileSync(thumb, Buffer.from([0x89, 0x50, 0x4e, 0x47, 7, 7, 7]));
+    const map = {
+      "https://api.github.com/repos/octo/one/releases/latest": rel,
+      "https://raw.githubusercontent.com/octo/one/HEAD/tcoaalmod.json": info,
+      "https://raw.githubusercontent.com/octo/one/HEAD/art/thumb.png": thumb,
+      [asset]: modA,
+    };
+    const cache = path.join(tmp, "community-cache.json");
+
+    await test("--community lists each repository's latest release, its id and its icon", () => {
+      const r = runJson(["--community", "--cache", cache], {
+        env: Object.assign(fetchStubEnv(tmp, map), { TCOAAL_COMMUNITY_LIST: list }),
+      });
+      eq(r.mods.length, 1, "one repository has a release");
+      const m = r.mods[0];
+      eq(m.repo, "octo/one");
+      eq(m.id, "mod-a", "the package's own id");
+      eq(m.name, "Mod A, the community cut", "tcoaalmod.json's name");
+      eq(m.author, "octo", "the owner, with no author in tcoaalmod.json");
+      eq(m.version, "2.1.0", "the tag");
+      eq(m.package, asset);
+      eq(m.icon, "data:image/png;base64," + fs.readFileSync(thumb).toString("base64"));
+      eq(r.errors.length, 1, "the repository without a release is reported");
+      eq(r.errors[0].repo, "octo/none");
+    });
+
+    await test("a repository that cannot be reached keeps its last known row", () => {
+      const r = runJson(["--community", "--cache", cache], {
+        env: Object.assign(fetchStubEnv(tmp, {}), { TCOAAL_COMMUNITY_LIST: list }),
+      });
+      eq(r.mods.length, 1);
+      eq(r.mods[0].version, "2.1.0");
+      assert(r.mods[0].icon, "the cached icon");
+    });
+
+    await test("--install-online installs the latest release of a repository", () => {
+      const fresh = path.join(tmp, "Online Game");
+      writeGame(fresh, base);
+      const r = runJson(["--install-online", JSON.stringify({ github: "octo/one" }), "--game", fresh], {
+        env: fetchStubEnv(tmp, map),
+      });
+      eq(r.id, "mod-a");
+      const st = runJson(["--status", "--game", fresh]);
+      eq(st.mods.map((m) => m.id).join(","), "mod-a");
+      const leftovers = fs.readdirSync(path.join(fresh, "addons")).filter((f) => /tcoaalmod$/.test(f));
+      eq(leftovers.length, 0, "the download is removed");
+    });
+  }
 
   await test("unsafe ids and paths are refused", () => {
     const loader = require(path.join(ROOT, "tools/mod-loader.js"));

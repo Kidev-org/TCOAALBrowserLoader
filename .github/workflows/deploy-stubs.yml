@@ -268,6 +268,68 @@ jobs:
           name: stub-${{ matrix.artifact }}
           path: out/${{ matrix.artifact }}
           if-no-files-found: error
+      # The Microsoft Store package: the un-stamped exe (the plain mod loader,
+      # no mod inside) in an unsigned .msix, for upload in Partner Center, which
+      # signs it. The manifest is tools/desktop/user/msix/AppxManifest.xml; its
+      # identity is what Partner Center reserved for the app, kept in repository
+      # variables, and without them there is no package to make. Its own
+      # artifact, never a stub-*: the publish job below serves every stub-*
+      # file on the site.
+      - name: Package the loader for the Microsoft Store
+        if: matrix.platform == 'windows' && vars.MSSTORE_IDENTITY_NAME != ''
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+          IDENTITY_NAME: ${{ vars.MSSTORE_IDENTITY_NAME }}
+          PUBLISHER: ${{ vars.MSSTORE_PUBLISHER }}
+          PUBLISHER_NAME: ${{ vars.MSSTORE_PUBLISHER_NAME }}
+          DISPLAY_NAME: ${{ vars.MSSTORE_DISPLAY_NAME }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($v in "PUBLISHER", "PUBLISHER_NAME") {
+            if (-not (Get-Item "env:$v").Value) {
+              Write-Output "::error::MSSTORE_$v is not set (Partner Center > Product identity)."
+              exit 1
+            }
+          }
+          if (-not $env:DISPLAY_NAME) { $env:DISPLAY_NAME = "TCOAAL Mod Loader" }
+          # The Store wants four parts, the last one 0: 1.2.3-beta -> 1.2.3.0.
+          $core = ($env:VERSION -split "-")[0]
+          if ($core -notmatch "^\d+\.\d+\.\d+$") {
+            Write-Output "::error::$env:VERSION cannot be an MSIX version."
+            exit 1
+          }
+          $env:VERSION = "$core.0"
+
+          $layout = "msix-layout"
+          New-Item -ItemType Directory -Force "$layout/Assets" | Out-Null
+          Copy-Item "$env:STUB_TARGET/release/tcoaal-mod-installer.exe" "$layout/TCOAALModLoader.exe"
+          foreach ($f in "Square44x44Logo.png", "Square150x150Logo.png", "StoreLogo.png") {
+            Copy-Item "$env:STUB_CRATE/src-tauri/icons/$f" "$layout/Assets/$f"
+          }
+          $xml = Get-Content -Raw "$env:STUB_CRATE/msix/AppxManifest.xml"
+          foreach ($k in "IDENTITY_NAME", "PUBLISHER", "PUBLISHER_NAME", "DISPLAY_NAME", "VERSION") {
+            $value = [System.Security.SecurityElement]::Escape((Get-Item "env:$k").Value)
+            $xml = $xml.Replace('${' + $k + '}', $value)
+          }
+          [System.IO.File]::WriteAllText("$PWD/$layout/AppxManifest.xml", $xml)
+
+          $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" |
+            Sort-Object { try { [version]$_.Directory.Parent.Name } catch { [version]"0.0" } } -Descending |
+            Select-Object -First 1
+          if (-not $makeappx) {
+            Write-Output "::error::makeappx.exe is not on this runner."
+            exit 1
+          }
+          New-Item -ItemType Directory -Force store | Out-Null
+          & $makeappx.FullName pack /o /d $layout /p "store/TCOAAL-Mod-Loader.msix"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v7
+        if: matrix.platform == 'windows' && vars.MSSTORE_IDENTITY_NAME != ''
+        with:
+          name: store-msix
+          path: store/TCOAAL-Mod-Loader.msix
+          if-no-files-found: error
 
   # The built set is stored as the assets of a `stub/v<version>` GitHub
   # Release, the same way deploy-android.yml stores its APK. It cannot be

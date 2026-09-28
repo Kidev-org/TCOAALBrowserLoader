@@ -370,6 +370,34 @@
         color: #a2938c;
         font-size: 11.5px;
       }
+      #modmenu .note {
+        padding: 0 8px 6px;
+        color: #7f746f;
+        font-size: 11px;
+        line-height: 1.35;
+      }
+      /*
+       * A mod that is not on this computer yet reads differently from one
+       * that is: a dashed outline and a download pill, so choosing it is
+       * plainly "get this" rather than "switch to this".
+       */
+      #modmenu .row.online {
+        margin-top: 4px;
+        border: 1px dashed rgba(127, 127, 127, 0.35);
+      }
+      #modmenu .row.online:hover {
+        border-color: rgba(214, 196, 188, 0.6);
+      }
+      #modmenu .row .get {
+        flex: none;
+        margin-left: auto;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: rgba(163, 35, 43, 0.85);
+        color: #fff;
+        font-size: 11.5px;
+        font-weight: 600;
+      }
       #modmenu hr {
         margin: 6px 4px;
         border: 0;
@@ -730,6 +758,9 @@
 
         const State = {
           app: null, // { version, mod, theme }: what this binary carries
+          // The community mods (app/community-mods.json, community_mods):
+          // null until the first answer, then the list, empty or not.
+          community: null,
           game: null, // mod-loader --status for the detected game
           progress: null, // the theme's OnProgress callback
           gameState: null, // the theme's OnGameState callback
@@ -882,6 +913,7 @@
          */
         const WRITES = [
           "install_mod",
+          "install_online_mod",
           "uninstall_mod",
           "enable_mod",
           "set_load_order",
@@ -1512,7 +1544,7 @@
           const choices = faceChoices();
           // One mod and nothing to open a second one with is no choice at all,
           // and the button would only be clutter over the theme's own screen.
-          bar.hidden = choices.length < 2 && !State.game;
+          bar.hidden = choices.length < 2 && !State.game && !onlineChoices().length;
           if (bar.hidden) {
             closeModMenu();
             return;
@@ -1536,6 +1568,12 @@
           head.className = "head";
           head.textContent = "Installed on this game";
           menu.appendChild(head);
+          if (!faceChoices().length) {
+            const none = document.createElement("div");
+            none.className = "note";
+            none.textContent = "Nothing installed yet.";
+            menu.appendChild(none);
+          }
 
           for (const c of faceChoices()) {
             const row = document.createElement("button");
@@ -1589,6 +1627,121 @@
             });
           };
           menu.appendChild(add);
+
+          paintOnlineMods(menu);
+        }
+
+        /*
+         * The second half of the menu: mods the community publishes on
+         * GitHub (app/community-mods.json) that are not in this game folder
+         * yet. Kept apart from the installed ones above, under their own
+         * heading, and drawn as downloads, so nobody takes one for a mod they
+         * already have. A mod counts as installed when its id is, or when an
+         * installed mod updates from the same repository.
+         */
+        function onlineChoices() {
+          const installed = (State.game && State.game.mods) || [];
+          const me = carried();
+          return (State.community || []).filter(function (c) {
+            const repo = String(c.repo || "").toLowerCase();
+            if (me && me.id === c.id) return false;
+            return !installed.some(function (m) {
+              const src = m.updateSource && m.updateSource.github;
+              return m.id === c.id || (src && String(src).toLowerCase() === repo);
+            });
+          });
+        }
+
+        function sizeText(bytes) {
+          if (!bytes) return "";
+          const mb = bytes / (1024 * 1024);
+          return mb >= 1 ? Math.round(mb) + " MB" : Math.max(1, Math.round(bytes / 1024)) + " KB";
+        }
+
+        function paintOnlineMods(menu) {
+          const list = onlineChoices();
+          if (State.community !== null && !list.length) return;
+          menu.appendChild(document.createElement("hr"));
+          const head = document.createElement("div");
+          head.className = "head";
+          head.textContent = "Available online";
+          menu.appendChild(head);
+          const note = document.createElement("div");
+          note.className = "note";
+          note.textContent =
+            State.community === null
+              ? "Looking for mods shared by the community..."
+              : "Shared by their authors on GitHub. Not reviewed by anyone: install what you trust.";
+          menu.appendChild(note);
+
+          for (const c of list) {
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "row online";
+            if (c.icon) {
+              const img = document.createElement("img");
+              img.src = c.icon;
+              img.alt = "";
+              row.appendChild(img);
+            }
+            const who = document.createElement("span");
+            who.className = "who";
+            const name = document.createElement("b");
+            name.textContent = c.name || c.id;
+            const sub = document.createElement("span");
+            sub.textContent = ["by " + (c.author || c.repo.split("/")[0])]
+              .concat(c.version ? ["v" + c.version] : [])
+              .concat(c.size ? [sizeText(c.size)] : [])
+              .join(" - ");
+            who.append(name, sub);
+            row.appendChild(who);
+            const get = document.createElement("span");
+            get.className = "get";
+            get.textContent = "Get";
+            row.appendChild(get);
+            row.onclick = function () {
+              closeModMenu();
+              window.InstallOnlineMod(c.repo).catch(function () {
+                /* call() has already put the reason on the screen */
+              });
+            };
+            menu.appendChild(row);
+          }
+        }
+
+        /*
+         * Install a community mod from its repository's latest release, then
+         * wear it, as a mod file the player opened would be.
+         */
+        window.InstallOnlineMod = async function (repo) {
+          if (!State.game || !State.game.root) {
+            const msg = "Point me at your copy of the game first, then get the mod.";
+            showError(msg);
+            throw new Error(msg);
+          }
+          const res = await call("install_online_mod", { root: gameRoot(), repo: repo });
+          await refreshGame();
+          const id = res && res.id;
+          if (id && id !== selfId()) {
+            await window.SwitchMod(id);
+            return res;
+          }
+          window.location.reload();
+          return res;
+        };
+
+        // Asked once per launch, after the screen is up: a list that cannot
+        // be had (offline, GitHub limits) leaves the menu as it was.
+        async function loadCommunityMods() {
+          try {
+            const res = await invoke("community_mods");
+            State.community = (res && res.mods) || [];
+          } catch (e) {
+            State.community = [];
+          }
+          paintModBar();
+          const menu = document.getElementById("modmenu");
+          if (menu && !menu.hidden) paintModMenu();
         }
 
         document.getElementById("modbar").onclick = function (ev) {
@@ -2302,6 +2455,15 @@
           // round trip.
           watchSteam();
           lookForUpdate();
+          loadCommunityMods();
+
+          // Opened with a .tcoaalmod (double-clicked, through the file
+          // association): add it, as a file the player picked.
+          if (State.app.open) {
+            window.AddModFile(State.app.open).catch(function () {
+              /* the reason is on the screen */
+            });
+          }
         })();
       })();
     </script>

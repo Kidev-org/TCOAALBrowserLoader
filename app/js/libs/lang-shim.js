@@ -3298,6 +3298,9 @@
 
   // The menu row has room for a few words; the console keeps the rest.
   function shortInstallError(e) {
+    // A package that fits no release of the game says which one it needs
+    // ("v3.0.13 is required"), not which of its files failed to apply.
+    if (e && e.code === "GAME_VERSION" && e.short) return e.short;
     var msg = String((e && e.message) || e || "Install failed");
     if (/fetch|network|HTTP|Failed to/i.test(msg)) return "Check your connection";
     if (/does not support your version/.test(msg)) return "Not for your game version";
@@ -8809,15 +8812,90 @@
         );
         return this.fetchWithRetry(method, url, _retryCount + 1);
       } else {
-        if (this._reloaders.length === 0) {
-          Graphics.printLoadingError(url);
-          SceneManager.stop();
-        }
-        return new Promise((resolve) =>
-          this._reloaders.push(() => resolve(this.fetchWithRetry(method, url, 0))),
-        );
+        // Out of quick retries: the stock loading-error screen, whose Retry
+        // runs the reloader. Ignore (or "Always ignore") used to drop the
+        // reloader with nothing else settling this promise, so the sound
+        // waited forever; and for music that is a track AudioManager thinks
+        // is playing and does not ask for again. It is now retried in the
+        // background instead, and music plays the moment it arrives.
+        const handler = this;
+        const firstFailure = this._reloaders.length === 0;
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          this._reloaders.push(() => {
+            if (settled) return;
+            settled = true;
+            resolve(handler.fetchWithRetry(method, url, 0));
+          });
+          window.__pendingLoadFailures.push({
+            target: null,
+            resolve: () => {
+              if (settled) return;
+              settled = true;
+              if (lateAudioIsWanted(url)) {
+                resolve(fetchAudioInBackground(handler, method, url));
+              } else {
+                reject(new Error("Failed to load: " + url));
+              }
+            },
+          });
+          if (firstFailure) {
+            Graphics.printLoadingError(url);
+            SceneManager.stop();
+          }
+        });
       }
     };
+
+    // Music and ambience are still wanted late (a scene with no music is
+    // wrong for as long as it lasts); a sound effect or a jingle heard seconds
+    // after what it belonged to is worse than none.
+    function lateAudioIsWanted(url) {
+      return /(^|\/)audio\/(bgm|bgs)\//i.test(decodeURIComponentSafe(url));
+    }
+
+    function decodeURIComponentSafe(u) {
+      try {
+        return decodeURIComponent(u);
+      } catch (e) {
+        return String(u);
+      }
+    }
+
+    // fetchWithRetry without its error screen: backs off for a few minutes,
+    // and stops for good on a 4xx (the file really is not there).
+    const LATE_AUDIO_RETRY_MS = [2000, 5000, 10000, 20000, 40000, 60000, 60000];
+    async function fetchAudioInBackground(handler, method, url) {
+      for (let i = 0; i < LATE_AUDIO_RETRY_MS.length; i++) {
+        await new Promise((r) => setTimeout(r, LATE_AUDIO_RETRY_MS[i]));
+        let response;
+        try {
+          response = await fetch(url, { credentials: "same-origin" });
+        } catch (e) {
+          continue;
+        }
+        if (response.ok) {
+          console.info("[lang-shim] late audio loaded:", url);
+          if (method === "stream" && response.body) {
+            return response.body.getReader();
+          }
+          if (method === "stream") {
+            const value = new Uint8Array(await response.arrayBuffer());
+            let done = false;
+            return {
+              read() {
+                if (done) return Promise.resolve({ done: true });
+                done = true;
+                return Promise.resolve({ done: false, value });
+              },
+            };
+          }
+          return await response[method]();
+        }
+        if (response.status < 500) break;
+      }
+      throw new Error("Failed to load: " + url);
+    }
   }
 
   // Hook into Scene_Boot.prototype.start

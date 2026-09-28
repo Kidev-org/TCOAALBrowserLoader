@@ -102,6 +102,7 @@ function loadLibs() {
     CompressionStream,
     DecompressionStream,
     Response,
+    AbortController,
     console,
   });
   const root = path.join(__dirname, "..");
@@ -110,6 +111,7 @@ function loadLibs() {
     "app/js/libs/json-diff.js",
     "app/js/libs/mod-package.js",
     "app/js/libs/mod-diff-worker.js",
+    "app/js/libs/community-mods.js",
   ]) {
     const abs = path.join(root, rel);
     if (!fs.existsSync(abs)) fail(`Missing bundled library: ${abs}`);
@@ -122,6 +124,7 @@ const LIBS = loadLibs();
 const C = LIBS.TcoaalCodec;
 const J = LIBS.JsonDiff;
 const P = LIBS.ModPackage;
+const CM = LIBS.CommunityMods;
 
 // Output protocol
 //
@@ -364,6 +367,150 @@ function selectVariant(manifest, game, opts) {
   return opts && opts.force ? variants[0] : null;
 }
 
+/*
+ * The game release a player knows ("3.0.13"): js/main.js's GAME_VERSION, the
+ * number create.html labels a variant with. System.json's versionId is an
+ * editor stamp, fine for matching, meaningless in a sentence.
+ */
+function gameReleaseOf(www) {
+  try {
+    const src = fs.readFileSync(path.join(www, "js", "main.js"), "utf8");
+    const m = src.match(/GAME_VERSION\s*=\s*["']([^"']+)["']/);
+    return (m && m[1].trim()) || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** The release a variant was built on: fingerprint.gameVersion, else the label's "v3.0.13". */
+function variantRelease(variant) {
+  const base = (variant && variant.base) || {};
+  const fp = base.fingerprint || {};
+  if (fp.gameVersion) return String(fp.gameVersion);
+  const m = String(base.label || "").match(/(\d+(?:\.\d+)+)/);
+  return m ? m[1] : null;
+}
+
+function releaseDistance(a, b) {
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  const out = [];
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    out.push(Math.abs((pa[i] || 0) - (pb[i] || 0)));
+  }
+  return out;
+}
+
+function compareDistance(a, b) {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] || 0) - (b[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+
+/*
+ * Every variant in the order to try it on this game: built on this exact game
+ * first (selectVariant's signals), then the nearest release, those naming no
+ * release last. None is refused here: checkVariant decides.
+ */
+function rankVariants(manifest, game) {
+  const exact = selectVariant(manifest, game, null);
+  const mine = gameReleaseOf(game.www);
+  return (manifest.variants || [])
+    .map((v, i) => {
+      const rel = variantRelease(v);
+      return { v, i, dist: mine && rel ? releaseDistance(mine, rel) : null };
+    })
+    .sort((a, b) => {
+      if (a.v === exact || b.v === exact) return a.v === exact ? -1 : 1;
+      if (a.dist && b.dist) return compareDistance(a.dist, b.dist) || a.i - b.i;
+      if (a.dist || b.dist) return a.dist ? -1 : 1;
+      return a.i - b.i;
+    })
+    .map((x) => x.v);
+}
+
+/*
+ * Whether `variant` applies to this game, without writing anything: every
+ * copy and patch replayed against the player's own files, every payload
+ * looked up. null when it applies, else the reason. A fault of the package
+ * itself (an unsafe path, a missing payload) is not a version question and
+ * fails outright.
+ */
+function checkVariant(variant, entries, game, id) {
+  const files = variant.files || [];
+  const wanted = new Set(files.map((f) => f.from || f.rel));
+  const made = new Map();
+  for (const f of files) {
+    if (!safeRel(f.rel) || (f.from && !safeRel(f.from))) {
+      fail(`Refusing an unsafe path in "${id}": ${f.from || f.rel}`);
+    }
+    if (f.type === "delete") continue;
+    if (f.type === "verbatim") {
+      const body = entries.get(f.payload);
+      if (!body) fail(`"${id}" is incomplete: missing payload ${f.payload} for ${f.rel}.`);
+      if (wanted.has(f.rel)) made.set(f.rel, C.dekit(body, f.rel));
+      continue;
+    }
+    if (f.type !== "patch" && f.type !== "copy") {
+      fail(`Unknown entry type "${f.type}" for ${f.rel} in "${id}".`);
+    }
+    const src = f.from || f.rel;
+    let plain = made.get(src);
+    if (!plain) {
+      const abs = path.join(game.www, src);
+      if (!fs.existsSync(abs)) return `${src} is missing from your game`;
+      plain = C.dekit(new Uint8Array(fs.readFileSync(abs)), src);
+    }
+    if (f.type === "patch") {
+      try {
+        const doc = JSON.parse(new TextDecoder().decode(plain));
+        plain = new TextEncoder().encode(JSON.stringify(J.apply(doc, f.ops || [])));
+      } catch (e) {
+        return `your ${src} is not the one it was made for`;
+      }
+    }
+    if (wanted.has(f.rel)) made.set(f.rel, plain);
+  }
+  return null;
+}
+
+/*
+ * The variant to install: the first of rankVariants that applies, so a mod
+ * built on another release installs when it fits. None applying is said in
+ * the words a player can act on: the release the mod needs.
+ */
+function pickVariant(manifest, entries, game, opts) {
+  const ranked = rankVariants(manifest, game);
+  if (!ranked.length) return null;
+  if (opts && opts.force) return ranked[0];
+  const reasons = [];
+  for (const v of ranked) {
+    const why = checkVariant(v, entries, game, manifest.id);
+    if (!why) return v;
+    reasons.push(`${labelOf(v)}: ${why}`);
+  }
+  const needed = [...new Set(ranked.map(variantRelease).filter(Boolean))];
+  const mine = gameReleaseOf(game.www);
+  const name = manifest.name || manifest.id;
+  if (needed.length) {
+    const list =
+      needed.length === 1
+        ? needed[0]
+        : needed.slice(0, -1).join(", ") + " or " + needed[needed.length - 1];
+    fail(
+      `"${name}" needs version ${list} of the game` +
+        (mine ? ` (yours is ${mine}).` : ".") +
+        `\n${reasons[0]}.`,
+    );
+  }
+  fail(
+    `"${name}" does not work with your version of the game.\n` +
+      `It was built for: ${ranked.map(labelOf).join(", ")}.\n${reasons[0]}.`,
+  );
+}
+
 function countFiles(dir) {
   let n = 0;
   const stack = [dir];
@@ -471,6 +618,145 @@ async function unpack(opts) {
   });
 }
 
+// Community mods (app/community-mods.json)
+
+/*
+ * The mods the community publishes on GitHub, for the app's "Available
+ * online" list: CommunityMods (app/js/libs/community-mods.js) resolves each
+ * listed repository to its latest release, and this adds the icon the row
+ * shows, as a data: URL (the repository's tcoaalmod.json thumbnail, else the
+ * icon.png read off the start of the package).
+ *
+ * `--cache <file>` keeps what was learnt between runs: a release asset that
+ * has not changed is not opened again, an icon is not fetched again, and a
+ * repository that cannot be reached this time (offline, GitHub rate limits)
+ * keeps its last known row. Nothing here installs anything.
+ */
+const ICON_MAX = 4 * 1024 * 1024;
+
+function readJsonFile(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    return null;
+  }
+}
+
+function iconMime(bytes, fallback) {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
+  if (bytes[0] === 0x47 && bytes[1] === 0x49) return "image/gif";
+  if (bytes[8] === 0x57 && bytes[9] === 0x45) return "image/webp";
+  return fallback || "image/png";
+}
+
+async function communityIcon(mod) {
+  let bytes = null;
+  if (mod.thumbnail) {
+    try {
+      const res = await fetch(mod.thumbnail);
+      if (res.ok) bytes = new Uint8Array(await res.arrayBuffer());
+    } catch (e) {}
+  }
+  if (!bytes) {
+    try {
+      bytes = await P.fetchEntry(mod.package, "icon.png", fetch);
+    } catch (e) {}
+  }
+  if (!bytes || !bytes.length || bytes.length > ICON_MAX) return null;
+  return `data:${iconMime(bytes)};base64,${Buffer.from(bytes).toString("base64")}`;
+}
+
+async function community(opts) {
+  const cache = (opts.cache && readJsonFile(opts.cache)) || {};
+  const known = {};
+  for (const m of cache.mods || []) if (m && m.repo) known[m.repo] = m;
+  const icons = cache.icons || {};
+  let repos;
+  try {
+    // TCOAAL_COMMUNITY_LIST: another list, a URL or a local file, for
+    // development and tests before the repository's copy has it.
+    const other = process.env.TCOAAL_COMMUNITY_LIST;
+    if (other && !/^https?:/i.test(other)) {
+      repos = CM.parseList(JSON.parse(fs.readFileSync(other, "utf8")));
+    } else {
+      repos = await CM.fetchList(fetch, other ? [other] : undefined);
+    }
+  } catch (e) {
+    // The list itself is out of reach: what the last run saw, as it was.
+    const mods = Object.values(known).map((m) =>
+      Object.assign({}, m, { icon: icons[iconKey(m)] || null }),
+    );
+    result({ mods, errors: [{ repo: null, message: String((e && e.message) || e) }], stale: true });
+    return;
+  }
+  const res = await CM.resolveAll(repos, fetch, known);
+  const byRepo = {};
+  for (const m of res.mods) byRepo[m.repo] = m;
+  for (const e of res.errors) if (known[e.repo]) byRepo[e.repo] = known[e.repo];
+  const mods = repos.map((r) => byRepo[r]).filter(Boolean);
+
+  const keptIcons = {};
+  const out = [];
+  for (const m of mods) {
+    const key = iconKey(m);
+    let icon = icons[key];
+    if (icon === undefined) icon = await communityIcon(m);
+    keptIcons[key] = icon || null;
+    out.push(Object.assign({}, m, { icon: icon || null }));
+  }
+  if (opts.cache) {
+    try {
+      fs.mkdirSync(path.dirname(opts.cache), { recursive: true });
+      fs.writeFileSync(opts.cache, JSON.stringify({ mods, icons: keptIcons }));
+    } catch (e) {}
+  }
+  result({ mods: out, errors: res.errors });
+}
+
+// An icon belongs to the thumbnail it came from, or to the release asset.
+function iconKey(m) {
+  return m.thumbnail ? "t:" + m.thumbnail : "a:" + m.assetId;
+}
+
+/*
+ * Install a mod straight from where it is published: `--install-online
+ * <json>`, a source as `update` and `online` name one ({github}, {url} or
+ * {manifest}). The package is downloaded into the addons folder, installed
+ * like any other file, and removed.
+ */
+async function installOnline(opts) {
+  const game = resolveGame(opts.game);
+  const src = opts.installSource || {};
+  const label = src.github || src.url || src.manifest || "the mod";
+  progress(0, 1, "Looking for the latest release...");
+  let found;
+  try {
+    found = await resolveSource(src);
+  } catch (e) {
+    fail(
+      `Could not find the mod at ${label}.\n${(e && e.message) || e}\n` +
+        `Check your connection, or try again later.`,
+    );
+  }
+  if (!found) fail(`${label} has no .tcoaalmod to download.`);
+  let file;
+  try {
+    file = await downloadPackage(game, found.url, "download-online", `Downloading ${label}...`);
+  } catch (e) {
+    fail(`Could not download the mod.\n${(e && e.message) || e}\nCheck your connection, or try again later.`);
+  }
+  try {
+    const pkg = await readPackage(file);
+    if (pkg.manifest.online) {
+      fail(`The release of ${label} holds a link to the mod, not the mod itself.`);
+    }
+    await installPackage(game, pkg, opts);
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+}
+
 // install / uninstall / enable / order
 
 /**
@@ -548,14 +834,9 @@ async function install(opts) {
 }
 
 async function installPackage(game, { manifest, entries, bytes }, opts) {
-  const variant = selectVariant(manifest, game, opts);
-  if (!variant) {
-    fail(
-      `"${manifest.name}" does not support your version of the game.\n` +
-        `It was built for: ${(manifest.variants || []).map(labelOf).join(", ")}.\n` +
-        `Install it anyway only if you know the builds match.`,
-    );
-  }
+  progress(0, 1, `Checking ${manifest.name || manifest.id} against your game...`);
+  const variant = pickVariant(manifest, entries, game, opts);
+  if (!variant) fail(`"${manifest.name || manifest.id}" holds no build of the mod.`);
 
   const id = manifest.id;
   const dir = modDir(game, id);
@@ -572,6 +853,9 @@ async function installPackage(game, { manifest, entries, bytes }, opts) {
     sha: crypto.createHash("sha256").update(bytes).digest("hex").slice(0, 32),
     installedAt: new Date().toISOString(),
     base: labelOf(variant),
+    // Which variant was checked and chosen: the profile applies that one,
+    // not whatever an exact-match guess would pick again.
+    variant: (manifest.variants || []).indexOf(variant),
   };
   if (state.order.indexOf(id) === -1) state.order.push(id);
   writeState(game, state);
@@ -1067,7 +1351,10 @@ async function buildProfile(game, opts) {
 async function applyModIntoProfile(game, dir, id) {
   const modFile = path.join(modDir(game, id), PACKAGE_NAME);
   const { manifest, entries } = await readPackage(modFile);
-  const variant = selectVariant(manifest, game, { force: true });
+  const chosen = (readState(game).mods[id] || {}).variant;
+  const variant =
+    (Number.isInteger(chosen) && (manifest.variants || [])[chosen]) ||
+    selectVariant(manifest, game, { force: true });
   const wwwOut = path.join(dir, game.wwwRel);
   const counts = { written: 0, deleted: 0, patched: 0, copied: 0 };
 
@@ -1523,6 +1810,8 @@ function printHelp() {
       "  node tools/mod-loader.js --check-update [id] --game <GameFolder>\n" +
       "                                 [--current <version>] [--source <json>]\n" +
       "  node tools/mod-loader.js --unpack  <mod.tcoaalmod> --out <dir>\n" +
+      "  node tools/mod-loader.js --community [--cache <file>]\n" +
+      "  node tools/mod-loader.js --install-online <json source> --game <GameFolder>\n" +
       "  node tools/mod-loader.js --apply-update <id> --game <GameFolder>\n\n" +
       "  --force   install even when no variant matches the game exactly\n",
   );
@@ -1564,6 +1853,18 @@ function parseArgs(argv) {
       } catch (e) {
         fail(`--source is not valid JSON: ${raw}`);
       }
+    } else if (a === "--community") {
+      opts.mode = "community";
+    } else if (a === "--cache") {
+      opts.cache = argv[++i];
+    } else if (a === "--install-online") {
+      opts.mode = "install-online";
+      const raw = argv[++i];
+      try {
+        opts.installSource = JSON.parse(raw);
+      } catch (e) {
+        fail(`--install-online takes a JSON source: ${raw}`);
+      }
     } else if (a === "--unpack") {
       opts.mode = "unpack";
       opts.modFile = argv[++i];
@@ -1581,7 +1882,8 @@ function parseArgs(argv) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
-  const needsGame = opts.mode !== "help" && opts.mode !== "unpack";
+  const needsGame =
+    opts.mode !== "help" && opts.mode !== "unpack" && opts.mode !== "community";
   if (needsGame && !opts.game)
     fail(`--${opts.mode} requires --game <GameFolder>.`);
 
@@ -1590,6 +1892,8 @@ async function main() {
     await unpack(opts);
   } else if (opts.mode === "status") status(opts);
   else if (opts.mode === "install") await install(opts);
+  else if (opts.mode === "install-online") await installOnline(opts);
+  else if (opts.mode === "community") await community(opts);
   else if (opts.mode === "uninstall") await uninstall(opts);
   else if (opts.mode === "enable") await setEnabled(opts);
   else if (opts.mode === "order") await setOrder(opts);

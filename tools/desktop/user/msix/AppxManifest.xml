@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Microsoft Store package of the un-stamped mod loader, built by
+  .github/workflows/deploy-stubs.yml (Windows job) with makeappx and left
+  unsigned: the Store signs what is uploaded through Partner Center.
+
+  ${...} values are filled in by that step. The identity is the one Partner
+  Center reserved for the app (Product identity page), kept in the repository
+  variables MSSTORE_IDENTITY_NAME, MSSTORE_PUBLISHER, MSSTORE_PUBLISHER_NAME
+  and, optionally, MSSTORE_DISPLAY_NAME; a package whose identity differs is
+  refused at upload.
+
+  runFullTrust: the loader is a plain Win32 app (Tauri + the Node runtime it
+  unpacks and runs). unvirtualizedResources with both virtualizations off: it
+  writes a player's game folder (addons/), launches the game from there, and
+  keeps its unpacked runtime in LocalAppData, and all of it has to be the real
+  location, the same one the standalone installers use, not a per-package
+  copy that would vanish on uninstall and that the game never sees.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap desktop6 rescap">
+
+  <Identity
+    Name="${IDENTITY_NAME}"
+    Publisher="${PUBLISHER}"
+    Version="${VERSION}"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>${DISPLAY_NAME}</DisplayName>
+    <PublisherDisplayName>${PUBLISHER_NAME}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+  </Properties>
+
+  <Dependencies>
+    <!-- 1903 is the first release that honours the two virtualization
+         switches above. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.18362.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="ModLoader" Executable="TCOAALModLoader.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="${DISPLAY_NAME}"
+        Description="Install and play mods for The Coffin of Andy and Leyley without changing the game."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- A double-clicked .tcoaalmod opens the loader, which adds it to
+             the game (opened_mod_file in src-tauri/src/main.rs). -->
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="tcoaalmod">
+            <uap:DisplayName>TCOAAL mod</uap:DisplayName>
+            <uap:Logo>Assets\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType ContentType="application/zip">.tcoaalmod</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+</Package>

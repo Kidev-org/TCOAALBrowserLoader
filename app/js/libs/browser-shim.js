@@ -1281,11 +1281,13 @@
       Bitmap.prototype._onError = function () {
         _stockBitmapOnError.call(this);
         var bitmap = this;
+        var url = bitmap._url;
         removePendingBitmap(bitmap); // no duplicate entries on repeated failures
         window.__pendingLoadFailures.push({
           target: bitmap,
           resolve: function () {
             bitmap._requestImage(BLANK_IMAGE_DATA_URI);
+            recoverLateBitmap(bitmap, url);
           },
         });
       };
@@ -1294,6 +1296,146 @@
         removePendingBitmap(this);
         _stockBitmapOnLoad.call(this);
       };
+    }
+
+    // A late image still arrives. An ignored bitmap is drawn blank, and it is
+    // not only this scene's: ImageManager caches the Bitmap object, so every
+    // later scene asking for the same picture got the same blank until the
+    // page was reloaded. A failure is most often a slow or briefly unreadable
+    // store rather than a missing file, so keep asking for the real image in
+    // the background and, once it loads, put it INTO that same Bitmap and
+    // repaint whatever on screen draws from it.
+    var LATE_IMAGE_RETRY_MS = [2000, 5000, 10000, 20000, 40000, 60000, 60000];
+
+    function recoverLateBitmap(bitmap, url) {
+      if (!url || url === BLANK_IMAGE_DATA_URI || /^(data|blob|cld):/.test(url))
+        return;
+      if (bitmap.__lateImageUrl === url) return; // already on it
+      bitmap.__lateImageUrl = url;
+      var attempt = 0;
+      function stillBlank() {
+        return bitmap.__lateImageUrl === url && bitmap._url === BLANK_IMAGE_DATA_URI;
+      }
+      function next() {
+        if (!stillBlank() || attempt >= LATE_IMAGE_RETRY_MS.length) {
+          if (bitmap.__lateImageUrl === url) bitmap.__lateImageUrl = null;
+          return;
+        }
+        setTimeout(tryOnce, LATE_IMAGE_RETRY_MS[attempt++]);
+      }
+      function tryOnce() {
+        if (!stillBlank()) return next();
+        var img = new Image();
+        img.onload = function () {
+          // The blank has to have landed first, or the stock _onLoad still to
+          // come would take this bitmap back to it.
+          if (!stillBlank() || bitmap._loadingState !== "loaded") return next();
+          bitmap.__lateImageUrl = null;
+          adoptLateImage(bitmap, img, url);
+        };
+        img.onerror = next;
+        img.src = url;
+      }
+      next();
+    }
+
+    function adoptLateImage(bitmap, img, url) {
+      bitmap._image = img;
+      bitmap._url = url;
+      // Drop the 1x1 canvas the blank may have grown; the getters rebuild one
+      // from the real image the next time anything draws on it.
+      bitmap.__canvas = null;
+      bitmap.__context = null;
+      bitmap._createBaseTexture(img);
+      bitmap._setDirty();
+      console.info("[browser-shim] late image loaded:", url);
+      try {
+        repaintBitmapUsers(SceneManager._scene, bitmap);
+      } catch (e) {
+        console.warn("[browser-shim] repaint after late image failed:", e);
+      }
+    }
+
+    // Everything the engine builds on a bitmap caches something taken from it
+    // at load time (a texture, a frame, a tileset upload), so each kind is
+    // told the way it is told natively: through its own load callback.
+    function repaintBitmapUsers(node, bitmap) {
+      if (!node) return;
+      if (node._bitmap === bitmap) {
+        // A frame sized from the 1x1 blank takes the real size; one set by the
+        // game (a sheet cell, a crop) is the game's and stays.
+        var f = node._frame;
+        if (f && f.width <= 1 && f.height <= 1) {
+          f.width = bitmap.width;
+          f.height = bitmap.height;
+        }
+        if (typeof node._onBitmapLoad === "function") node._onBitmapLoad(bitmap);
+        else if (typeof node._refresh === "function") node._refresh();
+      }
+      if (node._windowskin === bitmap && typeof node._onWindowskinLoad === "function") {
+        node._onWindowskinLoad();
+      }
+      if (node.bitmaps && node.bitmaps.indexOf && node.bitmaps.indexOf(bitmap) >= 0) {
+        if (typeof node.refreshTileset === "function") node.refreshTileset();
+        else if (typeof node.refresh === "function") node.refresh();
+      }
+      var kids = node.children;
+      if (kids) {
+        for (var i = 0; i < kids.length; i++) repaintBitmapUsers(kids[i], bitmap);
+      }
+    }
+
+    // A stream that breaks half-way is reloaded, not dropped. The DRM payload's
+    // WebAudio._loading reports a failed read through App.fail and returns,
+    // leaving a sound that never plays and, for music, a track AudioManager
+    // believes is playing (so it is not requested again until the next one).
+    // AudioStreaming's own version restarts the load from the top, which is
+    // what this puts back, around whichever _loading the active DRM defines.
+    if (
+      typeof WebAudio !== "undefined" &&
+      typeof WebAudio.prototype._loading === "function" &&
+      !WebAudio.prototype._loading.__reloadsBrokenStreams
+    ) {
+      var STREAM_RELOADS = 2;
+      var _drmLoading = WebAudio.prototype._loading;
+      var reloadingLoading = function (reader) {
+        var audio = this;
+        var url = audio._url;
+        var broken = null;
+        var guarded = {
+          read: function () {
+            return Promise.resolve(reader.read()).catch(function (e) {
+              // Taken before the DRM's catch runs, which may stop the audio.
+              broken = {
+                autoPlay: audio._autoPlay,
+                loop: audio._loop,
+                pos: audio.seek(),
+              };
+              throw e;
+            });
+          },
+        };
+        return Promise.resolve(_drmLoading.call(audio, guarded)).then(function () {
+          if (!broken || audio._url !== url) return;
+          var reloads = (audio.__streamReloads || 0) + 1;
+          if (reloads > STREAM_RELOADS) {
+            console.warn("[browser-shim] audio stream kept failing:", url);
+            return;
+          }
+          audio.initialize(url);
+          audio.__streamReloads = reloads;
+          if (broken.autoPlay) audio.play(broken.loop, broken.pos);
+        });
+      };
+      reloadingLoading.__reloadsBrokenStreams = true;
+      WebAudio.prototype._loading = reloadingLoading;
+    }
+
+    // One more, longer, quick retry before the loading-error screen. The
+    // store answers a failed read with a network error now (sw.js), which is
+    // worth a few seconds more than the stock 4.5 before the game is paused.
+    if (typeof ResourceHandler !== "undefined") {
+      ResourceHandler._defaultRetryInterval = [500, 1000, 3000, 6000];
     }
 
     // Uncap save slots; show max(50, saveCount + 5) in the save/load list.

@@ -309,12 +309,16 @@ if (typeof importScripts === "function") {
     return { files: files, stats: stats };
   }
 
-  async function fingerprint(source) {
+  // visit(rel, raw, i, n), when given, sees every file as it is read, so a
+  // caller that needs something else from each file (baseIndex) gets it in
+  // the same pass over the game rather than a second one.
+  async function fingerprint(source, visit) {
     var list = await source.list();
     list.sort();
     var chunks = [];
     for (var i = 0; i < list.length; i++) {
       var raw = await source.read(list[i]);
+      if (visit) await visit(list[i], raw, i, list.length);
       chunks.push(list[i] + "\n" + (await sha16(raw)) + "\n");
     }
     var digestBuf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(chunks.join("")));
@@ -327,7 +331,46 @@ if (typeof importScripts === "function") {
       var sys = tryJson(C.dekit(await source.read(STD_SYSTEM), STD_SYSTEM));
       if (sys && sys.versionId != null) version = String(sys.versionId);
     }
-    return { files: list.length, digest: digest, version: version };
+    // The release players know it by (js/main.js GAME_VERSION, "3.0.13"): the
+    // installer tries the nearest release first on a game this variant was
+    // not built on, and names it when none applies.
+    var gameVersion = null;
+    if (list.indexOf("js/main.js") !== -1) {
+      var mainSrc = new TextDecoder().decode(await source.read("js/main.js"));
+      var gm = mainSrc.match(/GAME_VERSION\s*=\s*["']([^"']+)["']/);
+      if (gm) gameVersion = gm[1].trim();
+    }
+    var out = { files: list.length, digest: digest, version: version };
+    if (gameVersion) out.gameVersion = gameVersion;
+    return out;
+  }
+
+  /*
+   * The reference index of a shipped game, for a mod built where the game is
+   * not (tools/build-mod.js in a mod repository's release workflow, which
+   * reads it from .config/base-index.json; create.html writes that file into
+   * the GitHub setup from the game imported here). Per file, the sha16 of its
+   * DECODED bytes, the same hash compare() indexes the base by, so the
+   * builder can tell the game's own content from the mod's without the game;
+   * and the fingerprint, so the variant it builds matches a player's game the
+   * way a create.html build does. Hashes, names and counts: nothing of the
+   * game itself.
+   */
+  var BASE_INDEX_FORMAT = "tcoaal-base-index/1";
+
+  async function baseIndex(source, onProgress) {
+    var files = {};
+    var fp = await fingerprint(source, async function (rel, raw, i, n) {
+      files[rel] = await sha16(C.dekit(raw, rel));
+      if (onProgress && (i % 64 === 0 || i === n - 1)) onProgress(i + 1, n);
+    });
+    if (!fp.gameVersion) {
+      throw new Error(
+        "That game has no js/main.js naming its version, so it cannot be " +
+          "described for a release workflow."
+      );
+    }
+    return { format: BASE_INDEX_FORMAT, game: fp.gameVersion, fingerprint: fp, files: files };
   }
 
   function idbReq(r) {
@@ -677,6 +720,8 @@ if (typeof importScripts === "function") {
     classify: classify,
     compare: compare,
     fingerprint: fingerprint,
+    baseIndex: baseIndex,
+    BASE_INDEX_FORMAT: BASE_INDEX_FORMAT,
     storageNames: storageNames,
     pathSpace: pathSpace,
     spaceProblem: spaceProblem,
@@ -715,6 +760,7 @@ if (typeof importScripts === "function") {
 if (typeof self !== "undefined" && typeof importScripts === "function") {
   self.onmessage = async function (ev) {
     var msg = ev.data;
+    if (msg && msg.cmd === "baseIndex") return runBaseIndex(msg);
     if (!msg || msg.cmd !== "diff") return;
     var db = null;
     try {
@@ -845,4 +891,34 @@ if (typeof self !== "undefined" && typeof importScripts === "function") {
       if (db) db.close();
     }
   };
+}
+
+/*
+ * {cmd:"baseIndex", dbName, storeName, baseVerId}: the reference index of one
+ * imported game (ModDiff.baseIndex), for create.html's GitHub setup. Replies
+ * {type:"progress", done, total}, then {type:"done", index} or
+ * {type:"error", message}.
+ */
+async function runBaseIndex(msg) {
+  var db = null;
+  try {
+    db = await new Promise(function (resolve, reject) {
+      var r = indexedDB.open(msg.dbName);
+      r.onsuccess = function () { resolve(r.result); };
+      r.onerror = function () { reject(r.error); };
+    });
+    var source = self.ModDiff.idbSource(db, msg.storeName, msg.baseVerId || null);
+    var names = await source.list();
+    if (!names.some(function (n) { return n.indexOf("data/") === 0; })) {
+      throw new Error("That game version has no files in this browser. Import it in the loader first.");
+    }
+    var index = await self.ModDiff.baseIndex(source, function (done, total) {
+      self.postMessage({ type: "progress", done: done, total: total });
+    });
+    self.postMessage({ type: "done", index: index });
+  } catch (e) {
+    self.postMessage({ type: "error", message: String((e && e.message) || e) });
+  } finally {
+    if (db) db.close();
+  }
 }

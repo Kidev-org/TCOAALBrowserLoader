@@ -1,0 +1,150 @@
+# Release a TCOAAL mod.
+#
+# Run it from the Actions tab ("Release" -> "Run workflow"). It:
+#   1. works out the next version from the newest vX.Y.Z tag (none yet:
+#      v0.0.1 for a patch, v0.1.0 for a minor, v1.0.0 for a major),
+#   2. builds the .tcoaalmod from this repository (.config/ + your files),
+#   3. stamps the installers you ticked,
+#   4. tags the commit it ran on and publishes a GitHub Release with it all.
+#
+# Nothing is tagged or published if the build fails. Installers and update
+# checks point at this repository's releases on their own: it is the
+# repository this workflow publishes to.
+#
+# The mod is described in .config/ (see .config/README.md), which the mod
+# creator page (https://tcoaal.app/create.html) downloads filled in as the
+# "GitHub setup".
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      offline:
+        description: "Offline installers (the mod inside)"
+        type: boolean
+        default: true
+      online:
+        description: "Online installers (small, download the mod)"
+        type: boolean
+        default: true
+      windows:
+        description: "Windows"
+        type: boolean
+        default: true
+      macos:
+        description: "macOS"
+        type: boolean
+        default: true
+      linux:
+        description: "Linux"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+# One release at a time: two runs would both read the same newest tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  # The build tools. A tag or commit of that repository pins them.
+  TOOLS_REPO: Kidev-org/TCOAALBrowserLoader
+  TOOLS_REF: main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Next version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
+          if [ -z "$last" ]; then last=v0.0.0; fi
+          IFS=. read -r major minor patch <<< "${last#v}"
+          case "$BUMP" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+            *) echo "::error::Unknown bump: $BUMP"; exit 1 ;;
+          esac
+          next="$major.$minor.$patch"
+          if git rev-parse -q --verify "refs/tags/v$next" >/dev/null; then
+            echo "::error::Tag v$next already exists."
+            exit 1
+          fi
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Choices
+        id: choices
+        env:
+          OFFLINE: ${{ inputs.offline }}
+          ONLINE: ${{ inputs.online }}
+          WINDOWS: ${{ inputs.windows }}
+          MACOS: ${{ inputs.macos }}
+          LINUX: ${{ inputs.linux }}
+        run: |
+          set -euo pipefail
+          pick() { local out=""; while [ $# -gt 0 ]; do
+            if [ "$1" = true ]; then out="${out:+$out,}$2"; fi; shift 2; done
+            echo "${out:-none}"; }
+          echo "installers=$(pick "$OFFLINE" offline "$ONLINE" online)" >> "$GITHUB_OUTPUT"
+          echo "os=$(pick "$WINDOWS" windows "$MACOS" macos "$LINUX" linux)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TOOLS_REPO }}
+          ref: ${{ env.TOOLS_REF }}
+          path: .tcoaal-tools
+          sparse-checkout: |
+            app/js/libs
+            tools/build-mod.js
+            tools/lib
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          INSTALLERS: ${{ steps.choices.outputs.installers }}
+          OS: ${{ steps.choices.outputs.os }}
+        run: |
+          set -euo pipefail
+          npm install --prefix .tcoaal-tools --no-save --no-package-lock sharp@0.34
+          node .tcoaal-tools/tools/build-mod.js \
+            --repo . \
+            --version "$VERSION" \
+            --out dist \
+            --installers "$INSTALLERS" \
+            --os "$OS" \
+            --github "$GITHUB_REPOSITORY"
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          name=$(node -p 'require("./.config/mod.json").name')
+          gh release create "v$VERSION" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "$name v$VERSION" \
+            --notes ""

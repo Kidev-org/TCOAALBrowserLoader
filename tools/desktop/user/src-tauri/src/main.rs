@@ -25,6 +25,7 @@
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use serde_json::{json, Value};
@@ -110,6 +111,10 @@ const TOOL_FILES: &[(&str, &str)] = &[
     (
         "app/js/libs/mod-diff-worker.js",
         include_str!("../../../../../app/js/libs/mod-diff-worker.js"),
+    ),
+    (
+        "app/js/libs/community-mods.js",
+        include_str!("../../../../../app/js/libs/community-mods.js"),
     ),
 ];
 
@@ -661,11 +666,21 @@ fn read_icon(dir: &Path) -> Option<String> {
 async fn app_info(app: AppHandle) -> Result<Value, String> {
     let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        // Handed out once per process: the page reloads after adding a mod
+        // (to wear it), and the arguments do not change with it.
+        let open = if OPENED_TAKEN.swap(true, Ordering::SeqCst) {
+            Value::Null
+        } else {
+            opened_mod_file()
+                .map(|p| Value::String(p.to_string_lossy().into_owned()))
+                .unwrap_or(Value::Null)
+        };
         let Some((dir, info)) = self_mod(&handle) else {
             return json!({
                 "version": env!("CARGO_PKG_VERSION"),
                 "mod": Value::Null,
                 "theme": Value::Null,
+                "open": open,
             });
         };
         let mut m = info.clone();
@@ -679,10 +694,39 @@ async fn app_info(app: AppHandle) -> Result<Value, String> {
             "version": env!("CARGO_PKG_VERSION"),
             "mod": m,
             "theme": read_theme(&dir),
+            "open": open,
         })
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+static OPENED_TAKEN: AtomicBool = AtomicBool::new(false);
+
+/// A .tcoaalmod the app was opened WITH, the way a file association (the
+/// Microsoft Store package's, a desktop's "Open with") launches it: a bare
+/// path, not `--payload`, which makes a file this binary's own mod. The page
+/// adds it to the game like a file the player picked.
+fn opened_mod_file() -> Option<PathBuf> {
+    let mut args = std::env::args().skip(1);
+    while let Some(a) = args.next() {
+        if a == "--payload" || a == "--report" {
+            args.next();
+            continue;
+        }
+        if a.starts_with("--") {
+            continue;
+        }
+        let p = PathBuf::from(&a);
+        let is_mod = p
+            .extension()
+            .map(|e| e.eq_ignore_ascii_case("tcoaalmod"))
+            .unwrap_or(false);
+        if is_mod && p.is_file() {
+            return Some(p);
+        }
+    }
+    None
 }
 
 // ===========================================================================
@@ -831,6 +875,69 @@ async fn choose_mod_file(app: AppHandle) -> Result<Option<String>, String> {
         .add_filter("TCOAAL mod", &["tcoaalmod"])
         .blocking_pick_file();
     Ok(picked.map(|f| f.to_string()))
+}
+
+/// The mods the community publishes on GitHub (app/community-mods.json), for
+/// the "Available online" half of the mod menu: each with its latest release,
+/// its author and its icon. What a run learns is kept in the app cache, so the
+/// next launch does not open the same packages again, and a repository that
+/// cannot be reached keeps the row it had.
+#[tauri::command]
+async fn community_mods(app: AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let cache = cache_dir().join("community-mods.json");
+        run_loader(
+            &app,
+            vec![
+                "--community".into(),
+                "--cache".into(),
+                cache.to_string_lossy().into_owned(),
+            ],
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// A GitHub repository name as GitHub allows it: `owner/repo`.
+fn is_repo_slug(s: &str) -> bool {
+    let mut parts = s.splitn(2, '/');
+    let (Some(owner), Some(repo)) = (parts.next(), parts.next()) else {
+        return false;
+    };
+    let owner_ok = !owner.is_empty()
+        && owner.len() <= 39
+        && owner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    let repo_ok = !repo.is_empty()
+        && repo.len() <= 100
+        && repo != "."
+        && repo != ".."
+        && repo
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+    owner_ok && repo_ok
+}
+
+/// Install a community mod from its repository's latest release: downloaded
+/// into the addons folder, installed like a file the player opened, removed.
+#[tauri::command]
+async fn install_online_mod(app: AppHandle, root: String, repo: String) -> Result<Value, String> {
+    if !is_repo_slug(&repo) {
+        return Err(format!("Not a GitHub repository: {repo}"));
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        run_loader(
+            &app,
+            vec![
+                "--install-online".into(),
+                json!({ "github": repo }).to_string(),
+                "--game".into(),
+                root,
+            ],
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1641,6 +1748,8 @@ fn main() {
             choose_game,
             game_status,
             install_mod,
+            community_mods,
+            install_online_mod,
             choose_mod_file,
             uninstall_mod,
             enable_mod,

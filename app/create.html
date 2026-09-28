@@ -1487,6 +1487,27 @@
           </p>
           <div id="downloads"></div>
         </div>
+
+        <div id="github-setup">
+          <h3 class="stamp-head">Publish from GitHub</h3>
+          <p class="hint">
+            Keep your modded game in a GitHub repository and let GitHub make
+            the releases: one click in its Actions tab builds the mod file and
+            the installers and publishes them, with the next version number.
+            The GitHub setup holds the <code>.github</code> folder with the
+            workflow that does it, and a <code>.config</code> folder with
+            everything above filled in: the details, the icon, the Customize
+            screen, the plugins, and a fingerprint of every file of the game
+            version picked in the first row (hashes, nothing of the game), so
+            GitHub can tell your files from the game's own without ever having
+            the game. Unzip both folders at the root of your repository, next
+            to your game's <code>www</code> folder (or in it).
+          </p>
+          <button type="button" class="btn" id="github-setup-btn">
+            Download the GitHub setup
+          </button>
+          <p class="build-status" id="github-setup-status"></p>
+        </div>
       </section>
     </main>
 
@@ -4318,6 +4339,7 @@ progress {
     <script src="js/libs/pe-resources.js"></script>
     <script src="js/libs/icns.js"></script>
     <script src="js/libs/stub-stamp.js"></script>
+    <script src="js/libs/bundled-plugins.js"></script>
 
     <script>
       "use strict";
@@ -4651,6 +4673,148 @@ progress {
 
       // Step 1: run the diff worker, then ModPackage.build().
 
+      // The GitHub setup: .github/workflows/release.yml and a filled-in
+      // .config/ (mod.json, base-index.json, icon.png, theme/), read by
+      // tools/build-mod.js in the modder's repository. The version is left
+      // out (the workflow takes it from the tag it creates) and so is where
+      // the mod is published: the workflow publishes to its own repository
+      // and passes that to the build itself.
+      const SETUP_FILES = [
+        { src: "/github-setup/release.yml", name: ".github/workflows/release.yml" },
+        { src: "/github-setup/README.md", name: ".config/README.md" },
+      ];
+      // One index per game version for the session: it is a full read of
+      // the imported game, and the game does not change under this page.
+      const _setupIndexes = new Map();
+
+      function computeBaseIndex(baseVerId, onProgress) {
+        const key = baseVerId || "";
+        if (_setupIndexes.has(key)) return Promise.resolve(_setupIndexes.get(key));
+        return new Promise(function (resolve, reject) {
+          const worker = new Worker("js/libs/mod-diff-worker.js");
+          const done = function () {
+            worker.terminate();
+          };
+          worker.onmessage = function (ev) {
+            const msg = ev.data;
+            if (!msg) return;
+            if (msg.type === "progress") onProgress(msg.done, msg.total);
+            else if (msg.type === "done") {
+              done();
+              _setupIndexes.set(key, msg.index);
+              resolve(msg.index);
+            } else if (msg.type === "error") {
+              done();
+              reject(new Error(msg.message));
+            }
+          };
+          worker.onerror = function (ev) {
+            done();
+            reject(new Error((ev && ev.message) || "The worker crashed."));
+          };
+          worker.postMessage({
+            cmd: "baseIndex",
+            dbName: DB_NAME,
+            storeName: STORE,
+            baseVerId: baseVerId,
+          });
+        });
+      }
+
+      // The game version the setup describes: the one picked in the first row,
+      // which is the one the modder says they modded; before they have
+      // picked one, the game imported as the active version. null when no
+      // game is imported at all.
+      function kitBase() {
+        const $select = document.querySelector("#pair-rows .pair-row .base-select");
+        if (!$select) return null;
+        let $opt = $select.value ? $select.options[$select.selectedIndex] : null;
+        if (!$opt) $opt = $select.querySelector('option[value="__active__"]');
+        if (!$opt) return null;
+        return {
+          baseVerId: $opt.value === "__active__" ? null : $opt.value,
+          label: $opt.textContent,
+        };
+      }
+
+      function setSetupStatus(msg, kind) {
+        const $el = document.getElementById("github-setup-status");
+        $el.textContent = msg || "";
+        $el.className = "build-status" + (kind ? " " + kind : "");
+      }
+
+      async function downloadGithubSetup() {
+        const $btn = document.getElementById("github-setup-btn");
+        if ($btn.disabled) return;
+        const meta = window.__CREATE__.getMeta();
+        if (!meta) {
+          setSetupStatus("Fix the mod details above, then try again.", "err");
+          return;
+        }
+        const base = kitBase();
+        if (!base) {
+          setSetupStatus("Import the game your mod is built on first.", "err");
+          return;
+        }
+        $btn.disabled = true;
+        try {
+          setSetupStatus("Reading " + base.label + "...", "");
+          const index = await computeBaseIndex(base.baseVerId, function (done, total) {
+            setSetupStatus(
+              "Reading " + base.label + "... " + Math.floor((done / total) * 100) + "%",
+              "",
+            );
+          });
+          const entries = [];
+          for (const f of SETUP_FILES) {
+            const res = await fetch(f.src, { cache: "no-cache" });
+            if (!res.ok) throw new Error("Could not load " + f.src + ".");
+            entries.push({ name: f.name, data: new Uint8Array(await res.arrayBuffer()) });
+          }
+          const config = {
+            id: meta.id,
+            name: meta.name,
+            author: meta.author,
+            description: meta.description,
+            game: index.game,
+            content: "",
+            saves: meta.saves,
+            plugins: selectedBundledPlugins().map(function (p) {
+              return p.name;
+            }),
+          };
+          const enc = new TextEncoder();
+          entries.push({
+            name: ".config/mod.json",
+            data: enc.encode(JSON.stringify(config, null, 2) + "\n"),
+          });
+          entries.push({
+            name: ".config/base-index.json",
+            data: enc.encode(JSON.stringify(index) + "\n"),
+          });
+          if (meta.icon) entries.push({ name: ".config/icon.png", data: meta.icon });
+          window.__CREATE__.getTheme().forEach(function (t) {
+            entries.push({ name: ".config/" + t.name, data: t.data });
+          });
+          const zip = await ModPackage.writeZip(entries);
+          download(zip, meta.id + "-github-setup.zip", "application/zip");
+          setSetupStatus(
+            "GitHub setup ready, for game v" + index.game + ". Unzip it at the root of your repository.",
+            "ok",
+          );
+        } catch (e) {
+          setSetupStatus((e && e.message) || String(e), "err");
+        } finally {
+          $btn.disabled = false;
+        }
+      }
+
+      document
+        .getElementById("github-setup-btn")
+        .addEventListener("click", function () {
+          downloadGithubSetup();
+        });
+
       let _worker = null;
       let _modBytes = null;
       let _meta = null;
@@ -4675,95 +4839,9 @@ progress {
       // true for every ticked plugin, UnlockAll included: the README ships
       // it off because it is a cheat a player is not asked about, while here
       // the checkbox is the asking.
-      const BUNDLED_PLUGINS = [
-        {
-          name: "MouseControl",
-          file: "js/plugins/MouseControl.js",
-          src: "plugins/MouseControl.js",
-          title: "Mouse Control",
-          author: "kidev",
-          blurb:
-            "Click-to-move, right-click cancel and menu, click on the player " +
-            "tile to interact, hover-to-select choices, touch gestures.",
-          description: "Mouse and touch control.",
-        },
-        {
-          name: "ImprovedLoader",
-          file: "js/plugins/ImprovedLoader.js",
-          src: "plugins/ImprovedLoader.js",
-          title: "Improved Loader",
-          author: "kidev",
-          blurb:
-            "Pause during cutscenes, notes on save rows, uncapped slots, a " +
-            "preview of the hovered save, fast load, quick save on M.",
-          description: "Better save/load.",
-          // No prefix on the save rows. The plugin's "auto" label reads an
-          // episode off the BASE game's map ids, and a mod's maps are its
-          // own: in a mod that tag is either wrong or meaningless, so a save
-          // here is named by its note and nothing else.
-          parameters: { Label: "" },
-        },
-        {
-          name: "VirtualController",
-          file: "js/plugins/VirtualController.js",
-          src: "plugins/VirtualController.js",
-          title: "Virtual Controller",
-          author: "kidev",
-          blurb: "On-screen touch controller: d-pad, A/B/X/Y, menu, quick save.",
-          description: "On-screen touch controller.",
-        },
-        {
-          name: "InteractGlint",
-          file: "js/plugins/InteractGlint.js",
-          src: "plugins/InteractGlint.js",
-          title: "Interact Glint",
-          author: "kidev",
-          blurb:
-            "A small periodic glint on everything you can interact with, " +
-            "following the UI Hints option.",
-          description: "Glint on interactables.",
-        },
-        {
-          name: "SeamlessMaps",
-          file: "js/plugins/SeamlessMaps.js",
-          src: "plugins/SeamlessMaps.js",
-          title: "Seamless Maps",
-          author: "kidev",
-          blurb:
-            "Centered camera, cross-faded door transfers, next-room previews " +
-            "past the map edge.",
-          description: "Centered camera and seamless doors.",
-        },
-        {
-          name: "UnlockAll",
-          file: "js/plugins/UnlockAll.js",
-          src: "plugins/UnlockAll.js",
-          title: "Unlocker",
-          author: "kidev",
-          blurb:
-            "Every ending and gallery tag reads as unlocked while the plugin " +
-            "is on; the save file itself is left as it was.",
-          description: "Unlock every ending/gallery tag.",
-        },
-        {
-          name: "SAN_AnalogMove",
-          file: "js/plugins/SAN_AnalogMove.js",
-          src: "mods/_AnalogMove/www/js/plugins/SAN_AnalogMove.js?fresh=",
-          title: "Analog Move",
-          author: "Sanshiro",
-          blurb: "Dot movement for the party that does not depend on tiles.",
-          description: "Analog movement.",
-        },
-        {
-          name: "YEP_X_MessageBacklog",
-          file: "js/plugins/YEP_X_MessageBacklog.js",
-          src: "mods/_MessageBacklog/www/js/plugins/YEP_X_MessageBacklog.js?fresh=",
-          title: "Message Backlog",
-          author: "Yanfly",
-          blurb: "A backlog of past messages, opened with TAB.",
-          description: "Message backlog (TAB).",
-        },
-      ];
+      // The Browser Player plugins a build can ship, shared with the CI
+      // builder (tools/build-mod.js): js/libs/bundled-plugins.js.
+      const BUNDLED_PLUGINS = window.BundledPlugins;
 
       function renderBundledPlugins() {
         const $list = document.getElementById("bundle-plugins-list");
