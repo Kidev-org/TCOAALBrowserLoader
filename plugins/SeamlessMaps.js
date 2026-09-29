@@ -233,12 +233,37 @@
     map._parallaxY = y;
   }
 
+  // Another camera plugin has taken the view off the player. SRD_CameraCore
+  // (the base game and every overhaul ship it) points the camera at a tile,
+  // an event or a follower with FocusCamera, sets $gameScreen.focusEvent to
+  // anything but 0 while it does, and glides with its own _scrollDuration;
+  // Galv_CamControl (ROLESWAP) follows $gameMap.camTarget. Centering on the
+  // player through either put the view where the scene was not: ROLESWAP's
+  // pre-title focuses the middle of a map whose player stands hidden at 0,0,
+  // and four of its six sprites were pushed off-screen.
+  function cameraOwnedElsewhere(map) {
+    if (typeof $gameScreen !== "undefined" && $gameScreen) {
+      var focus = $gameScreen.focusEvent;
+      if (focus !== undefined && focus !== 0) return true;
+    }
+    if (typeof map.isCameraScrolling === "function" && map.isCameraScrolling()) {
+      return true;
+    }
+    return map.camNorm === false && !!map.camTarget && map.camTarget !== $gamePlayer;
+  }
+
   var _Game_Player_updateScroll = Game_Player.prototype.updateScroll;
   Game_Player.prototype.updateScroll = function (lastScrolledX, lastScrolledY) {
     var map = $gameMap;
 
-    // A Scroll Map cutscene owns the camera while it runs.
-    if (map.isLoopHorizontal() || map.isLoopVertical() || map.isScrolling()) {
+    // A Scroll Map cutscene, or a camera plugin focused elsewhere, owns the
+    // camera while it runs.
+    if (
+      map.isLoopHorizontal() ||
+      map.isLoopVertical() ||
+      map.isScrolling() ||
+      cameraOwnedElsewhere(map)
+    ) {
       this._smRecover = RECOVER_FRAMES;
       return _Game_Player_updateScroll.call(this, lastScrolledX, lastScrolledY);
     }

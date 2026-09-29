@@ -68,6 +68,8 @@ jobs:
       contents: write
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
+      # A secret cannot be read in an `if:`, so its presence is read here.
+      MSSTORE: ${{ secrets.MSSTORE_IDENTITY_NAME != '' }}
     steps:
       - name: Download the Android APK
         uses: actions/download-artifact@v8.0.1
@@ -86,7 +88,7 @@ jobs:
       # The Microsoft Store package deploy-stubs.yml makes when the Partner
       # Center identity is configured: attached for upload in Partner Center.
       - name: Download the Microsoft Store package
-        if: vars.MSSTORE_IDENTITY_NAME != ''
+        if: env.MSSTORE == 'true'
         uses: actions/download-artifact@v8.0.1
         with:
           name: store-msix
@@ -100,7 +102,7 @@ jobs:
           fi
 
       - name: Publish the release
-        uses: softprops/action-gh-release@v3.0.1
+        uses: softprops/action-gh-release@v3.0.3
         with:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}

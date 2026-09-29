@@ -537,7 +537,35 @@
     _pixiOverridden = true;
   }
 
+  // A game or mod that draws its own cursor image keeps it. ROLESWAP's
+  // CustomCursor writes `url("img/system/cursor.png") 0 0, auto` onto the body
+  // and the game canvas every frame, and our crosshair/pointer replaced it
+  // right after. Any cursor we did not write ourselves is someone else's: an
+  // image one is adopted and drawn in place of our keywords (clicks and hover
+  // work the same), and a plain keyword written over it (a mod resetting to
+  // "auto") hands the cursor back to us. Read every frame, so a cursor the mod
+  // changes mid-game (ChangeCursor / ResetCursor) is followed.
+  var _lastCursor = null;
+  var _gameCursor = null;
+
+  // Only what setCursor itself writes: <html> is not ours (ES_Disable_and_
+  // activable_Mouse leaves "auto" there) and never shows through the canvas.
+  function foreignCursor() {
+    var els = [document.body, Graphics._canvas];
+    for (var i = 0; i < els.length; i++) {
+      var value = els[i] && els[i].style.cursor;
+      if (value && value !== _lastCursor) return value;
+    }
+    return null;
+  }
+
   function setCursor(cur) {
+    var foreign = foreignCursor();
+    if (foreign !== null) {
+      _gameCursor = foreign.indexOf("url(") >= 0 ? foreign : null;
+    }
+    if (_gameCursor) cur = _gameCursor;
+    _lastCursor = cur;
     var canvases = document.querySelectorAll("canvas");
     for (var i = 0; i < canvases.length; i++) {
       canvases[i].style.cursor = cur;

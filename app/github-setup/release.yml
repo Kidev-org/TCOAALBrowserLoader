@@ -37,10 +37,11 @@ on:
         description: "Windows"
         type: boolean
         default: true
-      macos:
-        description: "macOS"
-        type: boolean
-        default: true
+      # macOS installers are not offered for now.
+      # macos:
+      #   description: "macOS"
+      #   type: boolean
+      #   default: true
       linux:
         description: "Linux"
         type: boolean
@@ -63,7 +64,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -96,7 +97,7 @@ jobs:
           OFFLINE: ${{ inputs.offline }}
           ONLINE: ${{ inputs.online }}
           WINDOWS: ${{ inputs.windows }}
-          MACOS: ${{ inputs.macos }}
+          # MACOS: ${{ inputs.macos }}
           LINUX: ${{ inputs.linux }}
         run: |
           set -euo pipefail
@@ -104,9 +105,10 @@ jobs:
             if [ "$1" = true ]; then out="${out:+$out,}$2"; fi; shift 2; done
             echo "${out:-none}"; }
           echo "installers=$(pick "$OFFLINE" offline "$ONLINE" online)" >> "$GITHUB_OUTPUT"
-          echo "os=$(pick "$WINDOWS" windows "$MACOS" macos "$LINUX" linux)" >> "$GITHUB_OUTPUT"
+          # With macOS back: pick "$WINDOWS" windows "$MACOS" macos "$LINUX" linux
+          echo "os=$(pick "$WINDOWS" windows "$LINUX" linux)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           repository: ${{ env.TOOLS_REPO }}
           ref: ${{ env.TOOLS_REF }}
@@ -117,7 +119,7 @@ jobs:
             tools/lib
           sparse-checkout-cone-mode: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: 22
 

@@ -64,7 +64,8 @@ Actions tab -> **Release** -> **Run workflow**, then pick:
 - **offline**: installers with the mod inside.
 - **online**: small installers that download the newest release of this
   repository when the player installs.
-- **windows**, **macos**, **linux**: which systems to make installers for.
+- **windows**, **linux**: which systems to make installers for (macOS is not
+  offered for now).
 
 The release holds the `.tcoaalmod` (players can also add it from the Mods menu
 of the browser player) and one installer per system and kind, named
