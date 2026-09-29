@@ -1,0 +1,344 @@
+<!doctype html>
+<!--
+  TCOAAL Browser Player
+  Copyright (C) 2026 kidev
+
+  This program is free software: you can redistribute it and/or modify it
+  under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or (at your
+  option) any later version. This program is distributed in the hope that it
+  will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+  of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+  General Public License for more details: <https://www.gnu.org/licenses/>.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<!--
+  The privacy policy of kidev's Mod Loader, the desktop mod loader
+  (tools/desktop/user) as the Microsoft Store lists it. Partner Center links
+  here, so the text is plain HTML in the page: it has to read the same for a
+  store reviewer with scripts off as for anyone else, and it must not depend on
+  the service worker or a fetch. Keep it true to the code: every network
+  request the loader makes is in tools/mod-loader.js and
+  app/js/libs/community-mods.js, and a change there that reaches a new host or
+  keeps something new is a change to this page.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy policy | kidev's Mod Loader</title>
+    <meta
+      name="description"
+      content="Privacy policy of kidev's Mod Loader: it collects no personal information, has no account, analytics or ads, and keeps its settings on your computer."
+    />
+    <meta name="author" content="kidev" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#ec83c3" />
+    <link rel="canonical" href="https://tcoaal.app/privacy.html" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <style>
+      :root {
+        --purple: #ec83c3;
+        --default: #d3d0c0;
+        --white: #ffffff;
+        --black: #000000;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* Same backdrop as loader.html and notice.html. */
+      html {
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0.45) 60%,
+            rgba(0, 0, 0, 0.75) 100%
+          ),
+          url("img/bg.webp") top center / cover no-repeat fixed,
+          var(--black);
+      }
+
+      body {
+        background: transparent;
+        color: var(--default);
+        font-family: "Georgia", serif;
+        min-height: 100vh;
+        line-height: 1.65;
+      }
+
+      .wrap {
+        width: 100%;
+        max-width: 820px;
+        margin: 0 auto;
+        padding: clamp(56px, 7vmin, 88px) 16px clamp(40px, 6vmin, 72px);
+      }
+
+      .back-link {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        z-index: 10;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: rgba(15, 15, 15, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.9);
+        text-decoration: none;
+        font-size: 0.85em;
+        transition: all 0.3s ease;
+      }
+      .back-link:hover {
+        color: var(--white);
+        background: rgba(236, 131, 195, 0.35);
+        border-color: rgba(236, 131, 195, 0.6);
+      }
+      .back-link svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .doc {
+        padding: clamp(20px, 3vmin, 40px) clamp(18px, 3vmin, 44px);
+        background: rgba(20, 20, 20, 0.88);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        box-shadow:
+          0 6px 24px rgba(0, 0, 0, 0.55),
+          inset 0 0 24px rgba(0, 0, 0, 0.35);
+        font-size: clamp(15px, 1.6vmin, 17px);
+      }
+      .doc h1 {
+        color: var(--white);
+        font-size: clamp(22px, 3vmin, 32px);
+        font-weight: normal;
+        letter-spacing: 0.04em;
+        margin: 0 0 6px;
+      }
+      .doc .meta {
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 0.9em;
+        margin: 0 0 clamp(14px, 2vmin, 24px);
+        padding-bottom: clamp(10px, 1.5vmin, 18px);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      }
+      .doc h2 {
+        color: var(--purple);
+        font-size: clamp(15px, 1.9vmin, 20px);
+        font-weight: normal;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin: clamp(22px, 3.2vmin, 40px) 0 clamp(8px, 1.2vmin, 14px);
+      }
+      .doc p {
+        margin: 0 0 clamp(10px, 1.4vmin, 16px);
+      }
+      .doc ul {
+        margin: 0 0 clamp(10px, 1.4vmin, 16px);
+        padding-left: 1.3em;
+      }
+      .doc li {
+        margin: 0 0 6px;
+      }
+      .doc strong {
+        color: rgba(255, 255, 255, 0.92);
+      }
+      .doc code {
+        font-family: "Consolas", "Menlo", monospace;
+        font-size: 0.9em;
+        padding: 1px 5px;
+        border-radius: 3px;
+        background: rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.85);
+        overflow-wrap: anywhere;
+      }
+      .doc a {
+        color: var(--purple);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        overflow-wrap: anywhere;
+      }
+      .doc a:hover {
+        color: var(--white);
+      }
+    </style>
+  </head>
+  <body>
+    <a class="back-link" href="loader.html" aria-label="Back to tcoaal.app">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M19 12H5M12 19l-7-7 7-7" />
+      </svg>
+      <span>Back</span>
+    </a>
+
+    <main class="wrap">
+      <article class="doc">
+        <h1>Privacy policy of kidev's Mod Loader</h1>
+        <p class="meta">Effective September 29, 2026</p>
+
+        <p>
+          kidev's Mod Loader (the "app") installs and plays mods for The Coffin
+          of Andy and Leyley without changing the game itself. It is made by
+          kidev, an individual developer (the "developer", "we"). This policy
+          explains what the app does with information. It also covers the mod
+          installers built from the same program, which other mod authors
+          publish under their own mod's name.
+        </p>
+
+        <h2>In short</h2>
+        <ul>
+          <li>
+            The app does <strong>not</strong> collect, store or share any
+            personal information, and the developer receives none.
+          </li>
+          <li>
+            There is no account or sign-in, and there are no analytics, no ads,
+            no crash reports and no tracking of any kind.
+          </li>
+          <li>
+            What the app remembers stays on your computer, and you can delete
+            it at any time.
+          </li>
+          <li>
+            The app connects to the internet only to fetch mods and information
+            about them, as described below.
+          </li>
+        </ul>
+
+        <h2>Information we collect</h2>
+        <p>
+          None. The developer runs no server that the app reports to, and the
+          app sends no information about you, your computer or your use of it
+          to the developer or to anyone else.
+        </p>
+
+        <h2>When the app connects to the internet</h2>
+        <p>
+          The app downloads files over secure (https) connections, and only for
+          these purposes:
+        </p>
+        <ul>
+          <li>
+            <strong>The list of community mods</strong>, from
+            <code>tcoaal.app</code>, or from <code>raw.githubusercontent.com</code>
+            if that fails.
+          </li>
+          <li>
+            <strong>Details, pictures and downloads of mods</strong>, and
+            <strong>checks for newer versions of an installed mod</strong>, from
+            GitHub (<code>api.github.com</code>, <code>github.com</code>,
+            <code>raw.githubusercontent.com</code> and the addresses GitHub
+            sends downloads from).
+          </li>
+          <li>
+            <strong>Web addresses a mod's author chose</strong>, when a mod
+            keeps its picture, its download or its updates somewhere other than
+            GitHub.
+          </li>
+        </ul>
+        <p>
+          These requests only ask for files. They carry no identifier and no
+          information about you. Like any connection on the internet, they let
+          the server you connect to see your IP address and basic technical
+          details of the request, such as the time and the file asked for. Those
+          services handle that under their own privacy policies:
+          <code>tcoaal.app</code> is hosted on GitHub Pages, so for it and for
+          GitHub this is the
+          <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">GitHub General Privacy Statement</a>.
+          The developer does not receive this information.
+        </p>
+        <p>
+          Links in the app (such as a mod's web page) open in your default web
+          browser, which then works under its own privacy settings.
+        </p>
+
+        <h2>Information kept on your computer</h2>
+        <p>
+          To work, the app keeps a few things on your computer. None of it is
+          sent anywhere.
+        </p>
+        <ul>
+          <li>
+            <strong>In your game folder</strong>, a folder named
+            <code>addons</code>: the mods you installed, which of them are
+            enabled and in what order, and a modded copy of the game that it
+            launches. The game's own files are never changed.
+          </li>
+          <li>
+            <strong>In your user folders</strong> (<code>%APPDATA%</code> and
+            <code>%LOCALAPPDATA%</code> on Windows): the location of your game
+            folder, so the app does not have to search for it again; the last
+            list of community mods, so it opens quickly; the program files the
+            app unpacks to run; and small preferences such as whether the music
+            is muted and which mod's page is shown.
+          </li>
+        </ul>
+        <p>
+          To find your game and to launch it, the app reads where Steam is
+          installed and which game folders it knows, and checks whether Steam
+          is running. It only reads this on your computer; it does not send it
+          anywhere.
+        </p>
+
+        <h2>Mods, the game and Steam</h2>
+        <p>
+          Mods are made by their authors, not by the developer, and a mod
+          installed with the app, including the page the app shows for it, is
+          their work. A mod's page may display content from the internet chosen
+          by its author. Only install mods you trust.
+        </p>
+        <p>
+          When you press Play, the app starts the game you own through Steam.
+          The game and Steam are not part of the app and have their own
+          privacy policies, including the
+          <a href="https://store.steampowered.com/privacy_agreement/" target="_blank" rel="noopener">Valve Privacy Policy</a>.
+        </p>
+
+        <h2>Deleting your information</h2>
+        <p>
+          Uninstalling a mod in the app removes it from the
+          <code>addons</code> folder. To remove everything the app keeps,
+          uninstall the app, then delete the <code>addons</code> folder in your
+          game folder and the app's folders under <code>%APPDATA%</code> and
+          <code>%LOCALAPPDATA%</code>. Nothing is kept anywhere else.
+        </p>
+
+        <h2>Children</h2>
+        <p>
+          The app is meant for players of The Coffin of Andy and Leyley, a game
+          for mature audiences, and is not directed at children. It collects
+          no information from anyone, children included.
+        </p>
+
+        <h2>Changes to this policy</h2>
+        <p>
+          If the app changes in a way that affects this policy, this page will
+          be updated and its effective date changed. The page's history is
+          public in the app's source repository.
+        </p>
+
+        <h2>Contact</h2>
+        <p>
+          Questions about this policy or the app can be asked on the project's
+          <a href="https://github.com/Kidev-org/TCOAALBrowserLoader/issues" target="_blank" rel="noopener">GitHub issues page</a>.
+        </p>
+      </article>
+    </main>
+  </body>
+</html>

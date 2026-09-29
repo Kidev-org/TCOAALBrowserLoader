@@ -6,9 +6,11 @@
 
   ${...} values are filled in by that step. The identity is the one Partner
   Center reserved for the app (Product identity page), kept in the repository
-  variables MSSTORE_IDENTITY_NAME, MSSTORE_PUBLISHER, MSSTORE_PUBLISHER_NAME
-  and, optionally, MSSTORE_DISPLAY_NAME; a package whose identity differs is
-  refused at upload.
+  secrets MSSTORE_IDENTITY_NAME, MSSTORE_PUBLISHER, MSSTORE_PUBLISHER_NAME
+  and, optionally, MSSTORE_DISPLAY_NAME (default "kidev's Mod Loader", the
+  name the Store lists); a package whose identity differs is refused at
+  upload. Its privacy policy is https://tcoaal.app/privacy.html
+  (app/privacy.html), which has to stay true to what the loader does.
 
   runFullTrust: the loader is a plain Win32 app (Tauri + the Node runtime it
   unpacks and runs). unvirtualizedResources with both virtualizations off: it

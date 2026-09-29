@@ -294,7 +294,7 @@ jobs:
               exit 1
             }
           }
-          if (-not $env:DISPLAY_NAME) { $env:DISPLAY_NAME = "TCOAAL Mod Loader" }
+          if (-not $env:DISPLAY_NAME) { $env:DISPLAY_NAME = "kidev's Mod Loader" }
           # The Store wants four parts, the last one 0: 1.2.3-beta -> 1.2.3.0.
           $core = ($env:VERSION -split "-")[0]
           if ($core -notmatch "^\d+\.\d+\.\d+$") {
