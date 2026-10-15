@@ -329,6 +329,36 @@ const SE_BYTES = new Uint8Array([79, 103, 103, 83, 1, 2, 3]); // "OggS..."
     eq(w.network.length, 2);
   });
 
+  console.log("\nsw.js names the remaster changed:");
+
+  // The pre-remaster builds shipped this face as "l_thinkBUST].png" (a typo
+  // the remaster fixed), and mods built on them still ask for it by that name.
+  const L_THINK = "img/faces/c35073b032a3c6d0[BUST]";
+  const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  await test("an old name the remaster renamed is served from its new file", async () => {
+    const w = loadWorker({ [L_THINK]: PNG.buffer.slice(0) });
+    const resp = await w.request("img/faces/l_thinkBUST].png");
+    eq(resp.status, 200);
+    eq(resp.headers.get("Content-Type"), "image/png");
+    eq((await resp.arrayBuffer()).byteLength, PNG.length);
+    eq(w.network.length, 0, "network requests");
+  });
+
+  await test("an old name the remaster renamed resolves under an overhaul", async () => {
+    const w = loadWorker({
+      [L_THINK]: PNG.buffer.slice(0),
+      __active_mod__: "TCOAAR",
+    });
+    eq((await w.request("img/faces/l_thinkBUST].png")).status, 200);
+    eq(w.network.length, 0, "network requests");
+  });
+
+  await test("an old name stays a miss when the game lacks the file", async () => {
+    const w = loadWorker({});
+    eq((await w.request("img/faces/l_thinkBUST].png")).status, 404);
+  });
+
   console.log(`\n${passed + failed} tests: ${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();

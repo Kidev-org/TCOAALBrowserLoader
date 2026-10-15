@@ -395,7 +395,27 @@ async function resolveBaseAsset(db, logicalPath) {
       });
     }
   }
+  const renamed = await getRenamedInRemaster(db, logicalPath);
+  if (renamed !== null) {
+    return new Response(dekit(renamed.value, renamed.key), {
+      status: 200,
+      headers: { "Content-Type": mimeFor(logicalPath) },
+    });
+  }
   return null;
+}
+
+/**
+ * Look a pre-remaster name up under the remaster's storage name for it.
+ * Returns {value, key} on hit, or null when the name was not renamed or the
+ * game does not hold the file.
+ */
+async function getRenamedInRemaster(db, logicalPath) {
+  const own = Object.prototype.hasOwnProperty;
+  if (!own.call(RENAMED_IN_REMASTER, logicalPath)) return null;
+  const key = RENAMED_IN_REMASTER[logicalPath];
+  const value = await getAsset(db, key);
+  return value === null ? null : { value, key };
 }
 
 /**
@@ -949,6 +969,15 @@ async function hashPath(logicalPath) {
   parts[parts.length - 1] = h;
   return parts.join("/");
 }
+
+// Pre-remaster names whose remaster file does not sit at hashPath(name). The
+// remaster renamed these before hashing, so the hash of the old name finds
+// nothing, and a mod built on an old build still asks for the old name. Each
+// pair is byte-identical between the old build and the remaster.
+const RENAMED_IN_REMASTER = {
+  "img/faces/l_thinkBUST].png": "img/faces/c35073b032a3c6d0[BUST]",
+  "img/parallaxes/ground29.png": "img/parallaxes/362ac9a3f52e16a8",
+};
 
 // Pre-remaster ("old build") on-the-fly decoders.
 //
@@ -2604,6 +2633,15 @@ async function serveFromIDB(logicalPath, request) {
   if (encrypted !== null) {
     const decrypted = dekit(encrypted, hashedPath);
     return new Response(decrypted, {
+      status: 200,
+      headers: { "Content-Type": mimeFor(logicalPath) },
+    });
+  }
+
+  // 3.5 Pre-remaster name the remaster renamed (see RENAMED_IN_REMASTER).
+  const renamed = await getRenamedInRemaster(db, logicalPath);
+  if (renamed !== null) {
+    return new Response(dekit(renamed.value, renamed.key), {
       status: 200,
       headers: { "Content-Type": mimeFor(logicalPath) },
     });
